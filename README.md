@@ -21,6 +21,12 @@ npm install -g dexpaprika-mcp
 npx dexpaprika-mcp
 ```
 
+## Video Tutorial
+
+Watch our video tutorial to learn how to set up and use the DexPaprika MCP server:
+
+[![DexPaprika MCP Tutorial](https://img.youtube.com/vi/XeGiuR2rw9o/0.jpg)](https://www.youtube.com/watch?v=XeGiuR2rw9o)
+
 ## Usage with Claude Desktop
 
 Add this configuration to your Claude Desktop config file:
