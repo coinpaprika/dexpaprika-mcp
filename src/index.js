@@ -38,14 +38,14 @@ function formatMcpResponse(data) {
   };
 }
 
-// Create a new MCP server
+// MCP server instance
 const server = new McpServer({
   name: 'dexpaprika-mcp',
   version: '1.0.4',
   description: 'MCP server for accessing DexPaprika API data for decentralized exchanges and tokens',
 });
 
-// Tool 1: Get Available Networks
+// getNetworks
 server.tool(
   'getNetworks',
   'Retrieve a list of all supported blockchain networks and their metadata',
@@ -56,7 +56,7 @@ server.tool(
   }
 );
 
-// Tool 2: Get DEXes on a Network
+// getNetworkDexes
 server.tool(
   'getNetworkDexes',
   'Get a list of available decentralized exchanges on a specific network',
@@ -71,7 +71,7 @@ server.tool(
   }
 );
 
-// Tool 3: Get Top Pools
+// getTopPools
 server.tool(
   'getTopPools',
   'Get a paginated list of top liquidity pools from all networks',
@@ -87,7 +87,7 @@ server.tool(
   }
 );
 
-// Tool 4: Get Network Pools
+// getNetworkPools
 server.tool(
   'getNetworkPools',
   'Get a list of top liquidity pools on a specific network',
@@ -104,7 +104,7 @@ server.tool(
   }
 );
 
-// Tool 5: Get DEX Pools
+// getDexPools
 server.tool(
   'getDexPools',
   'Get top pools on a specific DEX within a network',
@@ -122,7 +122,7 @@ server.tool(
   }
 );
 
-// Tool 6: Get Pool Details
+// getPoolDetails
 server.tool(
   'getPoolDetails',
   'Get detailed information about a specific pool on a network',
@@ -137,7 +137,7 @@ server.tool(
   }
 );
 
-// Tool 7: Get Token Details
+// getTokenDetails
 server.tool(
   'getTokenDetails',
   'Get detailed information about a specific token on a network',
@@ -151,7 +151,7 @@ server.tool(
   }
 );
 
-// Tool 8: Get Token Pools
+// getTokenPools
 server.tool(
   'getTokenPools',
   'Get a list of top liquidity pools for a specific token on a network',
@@ -174,7 +174,7 @@ server.tool(
   }
 );
 
-// Tool 9: Get Pool OHLCV Data
+// getPoolOHLCV
 server.tool(
   'getPoolOHLCV',
   'Get OHLCV (Open-High-Low-Close-Volume) data for a specific pool',
@@ -197,7 +197,7 @@ server.tool(
   }
 );
 
-// Tool 10: Get Pool Transactions
+// getPoolTransactions
 server.tool(
   'getPoolTransactions',
   'Get transactions of a pool on a network',
@@ -218,7 +218,7 @@ server.tool(
   }
 );
 
-// Tool 11: Search
+// search
 server.tool(
   'search',
   'Search for tokens, pools, and DEXes by name or identifier',
@@ -229,14 +229,13 @@ server.tool(
     if (!query.trim()) {
       throw new Error('Search query cannot be empty');
     }
-    // Ensure proper URL encoding and sanitization
     const sanitizedQuery = encodeURIComponent(query.trim());
     const data = await fetchFromAPI(`/search?query=${sanitizedQuery}`);
     return formatMcpResponse(data);
   }
 );
 
-// Tool 12: Get Stats
+// getStats
 server.tool(
   'getStats',
   'Get high-level statistics about the DexPaprika ecosystem',
