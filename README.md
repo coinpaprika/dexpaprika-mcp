@@ -55,7 +55,7 @@ Once configured with Claude Desktop, you can use prompts like:
 - "Which DEXes are available on the Fantom network?"
 - "What tokens have the highest trading volume in the last 24 hours?"
 - "Find pools for the Jupiter token on Solana."
-- "What's the overall size of the DeFi ecosystem tracked by DexPaprika?"
+- "Get OHLCV data for the SOL/USDC pool on Solana for the past week."
 
 ## Available Tools
 
@@ -68,8 +68,18 @@ The server provides these tools to Claude:
 5. **getDexPools** - Get top pools on a specific DEX within a network
 6. **getPoolDetails** - Get detailed information about a specific pool on a network
 7. **getTokenDetails** - Get detailed information about a specific token on a network
-8. **search** - Search for tokens, pools, and DEXes by name or identifier
-9. **getStats** - Get high-level statistics about the DexPaprika ecosystem
+8. **getTokenPools** - Get a list of top liquidity pools for a specific token on a network
+9. **getPoolOHLCV** - Get OHLCV (Open-High-Low-Close-Volume) data for a specific pool
+10. **getPoolTransactions** - Get transactions of a pool on a network
+11. **search** - Search for tokens, pools, and DEXes by name or identifier
+
+## Rate Limits
+
+This server uses the DexPaprika API free tier by default, which comes with rate limiting:
+
+- If you encounter a rate limit error, it means you've reached the maximum number of requests allowed for the free tier
+- To increase your rate limits and access additional features, consider upgrading to a paid plan at https://docs.dexpaprika.com/
+- Rate limits help ensure fair usage and service stability for all users
 
 ## Development
 
