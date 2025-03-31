@@ -137,7 +137,7 @@ When working with Claude, try these specific technical queries:
 
 ## Rate Limits & Performance
 
-- **Free Tier Limits**: 60 requests per minute, 5,000 per day
+- **Free Tier Limits**: 60 requests per minute
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Data Freshness**: Pool and token data updated every 15-30s
 - **Error Handling**: 429 status codes indicate rate limiting
