@@ -13,6 +13,15 @@ A Model Context Protocol (MCP) server that provides access to decentralized exch
 
 ## Installation
 
+### Installing via Smithery
+
+To install DexPaprika for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@coinpaprika/dexpaprika-mcp):
+
+```bash
+npx -y @smithery/cli install @coinpaprika/dexpaprika-mcp --client claude
+```
+
+### Manual Installation
 ```bash
 # Install from npm
 npm install -g dexpaprika-mcp
