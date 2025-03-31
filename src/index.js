@@ -177,15 +177,15 @@ server.tool(
 // getPoolOHLCV
 server.tool(
   'getPoolOHLCV',
-  'Get OHLCV (Open-High-Low-Close-Volume) data for a specific pool',
+  'Get OHLCV (Open-High-Low-Close-Volume) data for a specific pool - essential for price analysis, backtesting, model training, and visualization across various timeframes',
   {
     network: z.string().describe('Network ID (e.g., ethereum, solana)'),
     poolAddress: z.string().describe('Pool address or identifier'),
     start: z.string().describe('Start time for historical data (ISO-8601, yyyy-mm-dd, or Unix timestamp)'),
     end: z.string().optional().describe('End time for historical data (max 1 year from start)'),
-    limit: z.number().optional().default(1).describe('Number of data points to retrieve (max 366)'),
-    interval: z.string().optional().default('24h').describe('Interval granularity for OHLCV data (1m, 5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h)'),
-    inversed: z.boolean().optional().default(false).describe('Whether to invert the price ratio in OHLCV calculations')
+    limit: z.number().optional().default(1).describe('Number of data points to retrieve (max 366) - adjust for different analysis needs'),
+    interval: z.string().optional().default('24h').describe('Interval granularity for data resolution (1m for short-term analysis, 1h for intraday patterns, 24h for long-term trends)'),
+    inversed: z.boolean().optional().default(false).describe('Whether to invert the price ratio for alternative pair perspective (e.g., ETH/USDC vs USDC/ETH)')
   },
   async ({ network, poolAddress, start, end, limit, interval, inversed }) => {
     let endpoint = `/networks/${network}/pools/${poolAddress}/ohlcv?start=${encodeURIComponent(start)}&interval=${interval}&limit=${limit}&inversed=${inversed}`;

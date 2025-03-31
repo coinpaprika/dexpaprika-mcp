@@ -24,6 +24,7 @@ DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No 
 - **Liquidity Pool Analytics**: Monitor TVL changes, impermanent loss calculations, and price impact assessments
 - **Market Analysis**: Cross-chain token comparisons, volume trends, and trading activity metrics
 - **Portfolio Trackers**: Real-time value tracking, historical performance analysis, yield opportunities
+- **Technical Analysis**: Perform advanced technical analysis using historical OHLCV data, including trend identification, pattern recognition, and indicator calculations
 
 ## Installation
 
@@ -85,7 +86,7 @@ The MCP server exposes these specific endpoints Claude can access:
 | `getNetworkPools` | Gets top pools on a specific network | `network`, `limit` | Get Solana's highest liquidity pools | 
 | `getDexPools` | Gets top pools for a specific DEX | `network`, `dex` | List pools on Uniswap V3 |
 | `getPoolDetails` | Gets detailed pool metrics | `network`, `poolAddress` | Complete metrics for USDC/ETH pool |
-| `getPoolOHLCV` | Retrieves time-series price data | `network`, `poolAddress`, `start`, `interval` | 7-day hourly candles for SOL/USDC |
+| `getPoolOHLCV` | Retrieves time-series price data for various analytical purposes (technical analysis, ML models, backtesting) | `network`, `poolAddress`, `start`, `interval` | 7-day hourly candles for SOL/USDC |
 | `getPoolTransactions` | Lists recent transactions in a pool | `network`, `poolAddress` | Last 20 swaps in a specific pool |
 
 ### Token Operations
@@ -113,7 +114,7 @@ const jupiterPools = await getTokenPools({
   limit: 5
 });
 
-// Get historical price data:
+// Get historical price data for various analytical purposes (technical analysis, ML models, backtesting):
 const ohlcvData = await getPoolOHLCV({
   network: "ethereum",
   poolAddress: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640", // ETH/USDC on Uniswap V3
@@ -134,6 +135,8 @@ When working with Claude, try these specific technical queries:
 - "Get recent transactions for the ETH/USDT pool on Uniswap and analyze buy vs sell pressure."
 - "Which tokens have seen >10% price increases in the last 24h on Binance Smart Chain?"
 - "Search for all pools containing the ARB token and rank them by volume."
+- "Retrieve OHLCV data for BTC/USDT to analyze volatility patterns and build a price prediction model."
+
 
 ## Rate Limits & Performance
 
@@ -141,6 +144,7 @@ When working with Claude, try these specific technical queries:
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Data Freshness**: Pool and token data updated every 15-30s
 - **Error Handling**: 429 status codes indicate rate limiting
+- **OHLCV Data Availability**: Historical data typically available from token/pool creation date
 
 ## Troubleshooting
 
@@ -150,6 +154,7 @@ When working with Claude, try these specific technical queries:
 - **Missing data**: Some newer tokens/pools may have incomplete historical data
 - **Timeout errors**: Large data requests may take longer, consider pagination
 - **Network errors**: Check network connectivity, the service requires internet access
+- **OHLCV limitations**: Maximum range between start and end dates is 1 year; use pagination for longer timeframes
 
 ## Development
 
