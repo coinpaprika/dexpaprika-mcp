@@ -28,6 +28,15 @@ DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No 
 
 ## Installation
 
+### Installing via Smithery
+
+To install DexPaprika for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@coinpaprika/dexpaprika-mcp):
+
+```bash
+npx -y @smithery/cli install @coinpaprika/dexpaprika-mcp --client claude
+```
+
+### Manual Installation
 ```bash
 # Install globally (recommended for regular use)
 npm install -g dexpaprika-mcp
