@@ -54,7 +54,7 @@ The server runs on port 8010 by default. You'll see `MCP server is running at ht
 
 Watch our step-by-step tutorial on setting up and using the DexPaprika MCP server:
 
-[![DexPaprika MCP Tutorial](https://img.youtube.com/vi/XeGiuR2rw9o/0.jpg)](https://www.youtube.com/watch?v=XeGiuR2rw9o)
+[![DexPaprika MCP Tutorial](https://img.youtube.com/vi/rIxFn2PhtvI/0.jpg)](https://www.youtube.com/watch?v=rIxFn2PhtvI)
 
 ## Claude Desktop Integration
 
