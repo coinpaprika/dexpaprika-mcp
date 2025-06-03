@@ -11,6 +11,13 @@ async function fetchFromAPI(endpoint) {
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`);
     if (!response.ok) {
+      if (response.status === 410) {
+        throw new Error(
+          'This endpoint has been permanently removed. Please use network-specific endpoints instead. ' +
+          'For example, use /networks/{network}/pools instead of /pools. ' +
+          'Get available networks first using the getNetworks function.'
+        );
+      }
       if (response.status === 429) {
         throw new Error(
           'Rate limit exceeded. You have reached the maximum number of requests allowed for the free tier. ' +
@@ -41,14 +48,30 @@ function formatMcpResponse(data) {
 // MCP server instance
 const server = new McpServer({
   name: 'dexpaprika-mcp',
-  version: '1.0.4',
+  version: '1.1.0',
   description: 'MCP server for accessing DexPaprika API data for decentralized exchanges and tokens',
 });
+
+/* 
+ * IMPORTANT FOR AI ASSISTANTS:
+ * 
+ * WORKFLOW FOR GETTING POOL DATA:
+ * 1. ALWAYS call getNetworks() first to see available networks
+ * 2. Use getNetworkPools() to get pools on specific networks (there is NO global pools function)
+ * 3. For cross-network searches, use search() function
+ * 
+ * KEY FUNCTIONS:
+ * - getNetworks: REQUIRED first step, returns valid network IDs
+ * - getNetworkPools: PRIMARY pool function (replaces any "getTopPools" concept)
+ * - search: Cross-network search when network is unknown
+ * 
+ * THERE IS NO "getTopPools" or "getAllPools" function - always use network-specific queries!
+ */
 
 // getNetworks
 server.tool(
   'getNetworks',
-  'Retrieve a list of all supported blockchain networks and their metadata',
+  'REQUIRED FIRST STEP: Get all supported blockchain networks. Always call this first to see available networks before using any network-specific functions. Returns network IDs like "ethereum", "solana", etc.',
   {},
   async () => {
     const data = await fetchFromAPI('/networks');
@@ -59,9 +82,9 @@ server.tool(
 // getNetworkDexes
 server.tool(
   'getNetworkDexes',
-  'Get a list of available decentralized exchanges on a specific network',
+  'Get available DEXes on a specific network. First call getNetworks to see valid network IDs.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
     page: z.number().optional().default(0).describe('Page number for pagination'),
     limit: z.number().optional().default(10).describe('Number of items per page')
   },
@@ -71,30 +94,14 @@ server.tool(
   }
 );
 
-// getTopPools
-server.tool(
-  'getTopPools',
-  'Get a paginated list of top liquidity pools from all networks',
-  {
-    page: z.number().optional().default(0).describe('Page number for pagination'),
-    limit: z.number().optional().default(10).describe('Number of items per page'),
-    sort: z.enum(['asc', 'desc']).optional().default('desc').describe('Sort order'),
-    orderBy: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().default('volume_usd').describe('Field to order by')
-  },
-  async ({ page, limit, sort, orderBy }) => {
-    const data = await fetchFromAPI(`/pools?page=${page}&limit=${limit}&sort=${sort}&order_by=${orderBy}`);
-    return formatMcpResponse(data);
-  }
-);
-
-// getNetworkPools
+// getNetworkPools - This is now the primary way to get pools
 server.tool(
   'getNetworkPools',
-  'Get a list of top liquidity pools on a specific network',
+  'PRIMARY POOL FUNCTION: Get top liquidity pools on a specific network. This is the MAIN way to get pool data - there is NO global pools function. Use this instead of any "getTopPools" or "getAllPools" concepts.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
+    network: z.string().describe('Network ID from getNetworks (required) - e.g., "ethereum", "solana"'),
     page: z.number().optional().default(0).describe('Page number for pagination'),
-    limit: z.number().optional().default(10).describe('Number of items per page'),
+    limit: z.number().optional().default(10).describe('Number of items per page (max 100)'),
     sort: z.enum(['asc', 'desc']).optional().default('desc').describe('Sort order'),
     orderBy: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().default('volume_usd').describe('Field to order by')
   },
@@ -107,12 +114,12 @@ server.tool(
 // getDexPools
 server.tool(
   'getDexPools',
-  'Get top pools on a specific DEX within a network',
+  'Get pools from a specific DEX on a network. First use getNetworks, then getNetworkDexes to find valid DEX IDs.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
-    dex: z.string().describe('DEX identifier'),
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
+    dex: z.string().describe('DEX identifier from getNetworkDexes (e.g., "uniswap_v3")'),
     page: z.number().optional().default(0).describe('Page number for pagination'),
-    limit: z.number().optional().default(10).describe('Number of items per page'),
+    limit: z.number().optional().default(10).describe('Number of items per page (max 100)'),
     sort: z.enum(['asc', 'desc']).optional().default('desc').describe('Sort order'),
     orderBy: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().default('volume_usd').describe('Field to order by')
   },
@@ -125,9 +132,9 @@ server.tool(
 // getPoolDetails
 server.tool(
   'getPoolDetails',
-  'Get detailed information about a specific pool on a network',
+  'Get detailed information about a specific pool. Requires network ID from getNetworks and a pool address.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
     poolAddress: z.string().describe('Pool address or identifier'),
     inversed: z.boolean().optional().default(false).describe('Whether to invert the price ratio')
   },
@@ -140,9 +147,9 @@ server.tool(
 // getTokenDetails
 server.tool(
   'getTokenDetails',
-  'Get detailed information about a specific token on a network',
+  'Get detailed information about a specific token on a network. First use getNetworks to get valid network IDs.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
     tokenAddress: z.string().describe('Token address or identifier')
   },
   async ({ network, tokenAddress }) => {
@@ -154,18 +161,22 @@ server.tool(
 // getTokenPools
 server.tool(
   'getTokenPools',
-  'Get a list of top liquidity pools for a specific token on a network',
+  'Get liquidity pools containing a specific token on a network. Great for finding where a token is traded.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
     tokenAddress: z.string().describe('Token address or identifier'),
     page: z.number().optional().default(0).describe('Page number for pagination'),
-    limit: z.number().optional().default(10).describe('Number of items per page'),
+    limit: z.number().optional().default(10).describe('Number of items per page (max 100)'),
     sort: z.enum(['asc', 'desc']).optional().default('desc').describe('Sort order'),
     orderBy: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().default('volume_usd').describe('Field to order by'),
+    reorder: z.boolean().optional().describe('If true, reorders the pool so that the specified token becomes the primary token for all metrics'),
     address: z.string().optional().describe('Filter pools that contain this additional token address')
   },
-  async ({ network, tokenAddress, page, limit, sort, orderBy, address }) => {
+  async ({ network, tokenAddress, page, limit, sort, orderBy, reorder, address }) => {
     let endpoint = `/networks/${network}/tokens/${tokenAddress}/pools?page=${page}&limit=${limit}&sort=${sort}&order_by=${orderBy}`;
+    if (reorder !== undefined) {
+      endpoint += `&reorder=${reorder}`;
+    }
     if (address) {
       endpoint += `&address=${encodeURIComponent(address)}`;
     }
@@ -177,14 +188,14 @@ server.tool(
 // getPoolOHLCV
 server.tool(
   'getPoolOHLCV',
-  'Get OHLCV (Open-High-Low-Close-Volume) data for a specific pool - essential for price analysis, backtesting, model training, and visualization across various timeframes',
+  'Get historical price data (OHLCV) for a pool - essential for price analysis, backtesting, and visualization. Requires network and pool address.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
     poolAddress: z.string().describe('Pool address or identifier'),
-    start: z.string().describe('Start time for historical data (ISO-8601, yyyy-mm-dd, or Unix timestamp)'),
+    start: z.string().describe('Start time for historical data (Unix timestamp, RFC3339 timestamp, or yyyy-mm-dd format)'),
     end: z.string().optional().describe('End time for historical data (max 1 year from start)'),
     limit: z.number().optional().default(1).describe('Number of data points to retrieve (max 366) - adjust for different analysis needs'),
-    interval: z.string().optional().default('24h').describe('Interval granularity for data resolution (1m for short-term analysis, 1h for intraday patterns, 24h for long-term trends)'),
+    interval: z.string().optional().default('24h').describe('Interval granularity: 1m, 5m, 10m, 15m, 30m, 1h, 6h, 12h, 24h'),
     inversed: z.boolean().optional().default(false).describe('Whether to invert the price ratio for alternative pair perspective (e.g., ETH/USDC vs USDC/ETH)')
   },
   async ({ network, poolAddress, start, end, limit, interval, inversed }) => {
@@ -200,12 +211,12 @@ server.tool(
 // getPoolTransactions
 server.tool(
   'getPoolTransactions',
-  'Get transactions of a pool on a network',
+  'Get recent transactions for a specific pool. Shows swaps, adds, removes. Requires network and pool address.',
   {
-    network: z.string().describe('Network ID (e.g., ethereum, solana)'),
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
     poolAddress: z.string().describe('Pool address or identifier'),
-    page: z.number().optional().default(0).describe('Page number for pagination'),
-    limit: z.number().optional().default(10).describe('Number of items per page'),
+    page: z.number().optional().default(0).describe('Page number for pagination (up to 100 pages)'),
+    limit: z.number().optional().default(10).describe('Number of items per page (max 100)'),
     cursor: z.string().optional().describe('Transaction ID used for cursor-based pagination')
   },
   async ({ network, poolAddress, page, limit, cursor }) => {
@@ -221,7 +232,7 @@ server.tool(
 // search
 server.tool(
   'search',
-  'Search for tokens, pools, and DEXes by name or identifier',
+  'Search across ALL networks for tokens, pools, and DEXes by name, symbol, or address. Good starting point when you don\'t know the specific network.',
   {
     query: z.string().describe('Search term (e.g., "uniswap", "bitcoin", or a token address)')
   },
@@ -238,7 +249,7 @@ server.tool(
 // getStats
 server.tool(
   'getStats',
-  'Get high-level statistics about the DexPaprika ecosystem',
+  'Get high-level statistics about the DexPaprika ecosystem: total networks, DEXes, pools, and tokens available.',
   {},
   async () => {
     const data = await fetchFromAPI('/stats');

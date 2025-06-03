@@ -1,7 +1,7 @@
 {
   "name": "dexpaprika-mcp",
-  "version": "1.0.5",
-  "description": "A Model Context Protocol server for DexPaprika cryptocurrency data",
+  "version": "1.1.0",
+  "description": "A Model Context Protocol server for DexPaprika cryptocurrency data with network-specific pool queries",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -22,7 +22,9 @@
     "cryptocurrency",
     "defi",
     "dex",
-    "decentralized-exchange"
+    "decentralized-exchange",
+    "blockchain",
+    "liquidity-pools"
   ],
   "author": "",
   "license": "MIT",

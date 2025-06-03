@@ -1,4 +1,5 @@
-openapi: 3.0.3
+openapi: 3.1.0
+security: []
 info:
   title: DexPaprika API
   version: 1.0.2
@@ -8,7 +9,6 @@ info:
 
       Our API enables developers to query token, pool, and DEX data across multiple blockchain networks. Feel free to explore our endpoints below.
 
-      **Important:** This API is currently in beta and **should not be used in critical solutions or features**, as the service is under active development. We reserve the right to introduce changes or break backward compatibility.
 
       ---
     # Getting Started
@@ -16,7 +16,7 @@ info:
     ## Testing the API - Code Snippets
 
     The snippets below show how to quickly make a **GET** request. Since this is
-    a **public beta** (no API key needed), you can simply call the endpoints
+    a **public API** (no API key needed), you can simply call the endpoints
     directly.
 
 
@@ -242,12 +242,33 @@ info:
     possible collaboration, please reach out to msroka@coinpaprika.com.
 
     ---
+  contact:
+    name: CoinPaprika Support
+    email: support@coinpaprika.com
+    url: https://coinpaprika.com
+  license:
+    name: Proprietary
+    url: https://dexpaprika.com/terms
+tags:
+  - name: Networks
+    description: Endpoints for retrieving information about supported blockchain networks
+  - name: DEXes
+    description: Endpoints for retrieving information about decentralized exchanges
+  - name: Pools
+    description: Endpoints for retrieving information about liquidity pools
+  - name: Tokens
+    description: Endpoints for retrieving information about tokens
+  - name: Search
+    description: Endpoints for searching across tokens, pools, and DEXes
+  - name: Utils
+    description: Utility endpoints for system metadata
 servers:
   - url: "https://api.dexpaprika.com"
     description: Production server
 paths:
   /networks:
     get:
+      operationId: getNetworks
       tags:
         - Networks
       summary: Get a list of available blockchain networks.
@@ -261,23 +282,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  networks:
-                    type: array
-                    description: List of blockchain networks.
-                    items:
-                      $ref: "#/components/schemas/Network"
-                example:
-                  networks:
-                    - id: ethereum
-                      display_name: Ethereum
-                      native_asset_ticker: ETH
-                      explorer: "https://etherscan.io"
-                    - id: fantom
-                      display_name: Fantom
-                      native_asset_ticker: FTM
-                      explorer: "https://ftmscan.com"
+                type: array
+                description: List of blockchain networks.
+                items:
+                  $ref: "#/components/schemas/Network"
+              example:
+                - id: "ethereum"
+                  display_name: "Ethereum"
+                - id: "fantom"
+                  display_name: "Fantom"
+                - id: "solana"
+                  display_name: "Solana"
         "400":
           description: Bad request. Invalid parameters.
           content:
@@ -300,6 +315,7 @@ paths:
                     example: Unexpected server error. Please try again later.
   "/networks/{network}/dexes":
     get:
+      operationId: getNetworkDexes
       tags:
         - DEXes
       summary: Get a list of available dexes on a network.
@@ -344,19 +360,39 @@ paths:
                     example: Network not found.
   /pools:
     get:
+      operationId: getTopPools
       tags:
         - Pools
-      summary: Get top X pools.
+      summary: Get top X pools. (DEPRECATED)
       description: |
+        **THIS ENDPOINT HAS BEEN DEPRECATED AND WILL BE REMOVED.**
+        It now returns a 410 Gone status. Please refer to our API documentation for alternatives.
+
+        ---
+        *Original Description (for historical reference):*
         Retrieves a paginated list of top pools from all (or specific) networks.
         Allows sorting and ordering, providing aggregated volume, price data,
         and token details for each pool.
+      deprecated: true
       parameters:
         - $ref: "#/components/parameters/pageParam"
         - $ref: "#/components/parameters/limitParam"
         - $ref: "#/components/parameters/sortParam"
         - $ref: "#/components/parameters/orderParam"
       responses:
+        "410":
+          description: Endpoint Removed. This endpoint has been permanently removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Endpoint Removed
+                  message:
+                    type: string
+                    example: This endpoint has been permanently removed. Please refer to our API documentation for alternatives.
         "200":
           description: successful operation
           content:
@@ -440,6 +476,7 @@ paths:
                     example: Network not found.
   "/networks/{network}/pools":
     get:
+      operationId: getNetworkPools
       tags:
         - Pools
       summary: Get top X pools on a network.
@@ -539,6 +576,7 @@ paths:
                     example: Network not found.
   "/networks/{network}/dexes/{dex}/pools":
     get:
+      operationId: getDexPools
       tags:
         - Pools
       summary: Get top X pools on a network's DEX.
@@ -640,6 +678,7 @@ paths:
                     example: DEX not found on this network.
   "/networks/{network}/pools/{pool_address}":
     get:
+      operationId: getPoolDetails
       tags:
         - Pools
       summary: Get a pool on a network.
@@ -890,6 +929,7 @@ paths:
                     example: Pool not found.
   "/networks/{network}/pools/{pool_address}/ohlcv":
     get:
+      operationId: getPoolOHLCV
       tags:
         - Pools
       summary: Get OHLCV data for a pool pair.
@@ -904,7 +944,7 @@ paths:
         only.  
 
         - **limit** can control how many data points to retrieve (e.g., maximum
-        of 500).  
+        of 100).  
 
         - **interval** defines the granularity (e.g., 1h, 4h, 1d).  
 
@@ -919,50 +959,22 @@ paths:
         - $ref: "#/components/parameters/ohlcvInvertedPriceParam"
       responses:
         "200":
-          description: successful operation
+          description: A list of OHLCV records successfully retrieved.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  transactions:
-                    type: array
-                    description: >-
-                      An array of Transaction objects (candlestick or trade
-                      data).
-                    items:
-                      $ref: "#/components/schemas/Transaction"
-                  page_info:
-                    type: object
-                    description: Information about the current page of results.
-                    properties:
-                      limit:
-                        type: integer
-                        description: The maximum number of data points per page.
-                      page:
-                        type: integer
-                        description: The current page index.
-                      total_items:
-                        type: integer
-                        description: The total number of matching entries.
-                      total_pages:
-                        type: integer
-                        description: The total number of pages available.
+                type: array
+                description: An array of OHLCV records (candlesticks) matching the query criteria.
+                items:
+                  $ref: "#/components/schemas/OHLCVRecord"
               example:
-                transactions:
-                  - tx_id: 0x35fe5cf8...
-                    block_number: 14328510
-                    time: "2025-01-27T10:05:00.000Z"
-                    action: swap
-                  - tx_id: 0x888baad6...
-                    block_number: 14328511
-                    time: "2025-01-27T10:10:00.000Z"
-                    action: add_liquidity
-                page_info:
-                  limit: 100
-                  page: 1
-                  total_items: 350
-                  total_pages: 4
+                - time_open: "2025-03-10T00:00:00Z"
+                  time_close: "2025-03-11T00:00:00Z"
+                  open: 126.43817748776037
+                  high: 131.48201077049822
+                  low: 115.52148830221141
+                  close: 118.20275113239272
+                  volume: 262402654
         "400":
           description: The specified network or pool address (or token) is invalid.
           content:
@@ -985,10 +997,12 @@ paths:
                     example: Pool not found on this network.
   "/networks/{network}/pools/{pool_address}/transactions":
     get:
+      operationId: getPoolTransactions
       tags:
         - Pools
       summary: >-
-        Get transactions of a pool on a network.
+        Get transactions of a pool on a network. Paging can be used up to 100
+        pages.
       parameters:
         - $ref: "#/components/parameters/pageParam"
         - $ref: "#/components/parameters/limitParam"
@@ -1046,6 +1060,7 @@ paths:
           description: Network not found or pool not found.
   "/networks/{network}/tokens/{token_address}":
     get:
+      operationId: getTokenDetails
       tags:
         - Tokens
       summary: Get a token's latest data on a network.
@@ -1153,6 +1168,7 @@ paths:
                     example: Token not found on this network.
   "/networks/{network}/tokens/{token_address}/pools":
     get:
+      operationId: getTokenPools
       tags:
         - Tokens
       summary: Get top X pools for a token.
@@ -1169,6 +1185,12 @@ paths:
         - $ref: "#/components/parameters/tokenAddressParam"
         - $ref: "#/components/parameters/sortParam"
         - $ref: "#/components/parameters/orderParam"
+        - name: reorder
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: If true, reorders the pool so that the token provided in `tokenAddressParam` becomes the primary token for all metrics and calculations. Useful when the provided token is not the first token in the pool.
         - name: address
           in: query
           required: false
@@ -1260,6 +1282,7 @@ paths:
                     example: Token not found or no pools found for this token.
   /search:
     get:
+      operationId: search
       tags:
         - Search
       summary: "Search for tokens, pools, and DEXes"
@@ -1316,6 +1339,17 @@ paths:
                           type: string
                         explorer:
                           type: string
+                        fdv:
+                          type: number
+                          description: Fully diluted valuation of the token.
+                        price_usd:
+                          type: number
+                        liquidity_usd:
+                          type: number
+                        volume_usd:
+                          type: number
+                        price_usd_change:
+                          type: number
                   pools:
                     type: array
                     description: An array of matching pools.
@@ -1405,6 +1439,7 @@ paths:
                     example: Missing query parameter.
   /stats:
     get:
+      operationId: getStats
       tags:
         - Utils
       summary: Retrieve high-level asset statistics
@@ -1437,6 +1472,26 @@ paths:
                 factories: 54
                 pools: 23456
                 tokens: 8920
+        "400":
+          description: Bad request. Invalid parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Invalid request parameters.
+        "500":
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Unexpected server error. Please try again later.
 components:
   schemas:
     ArrayOfDexes:
@@ -1487,24 +1542,6 @@ components:
           page: 1
           total_items: 30
           total_pages: 1
-    Dex:
-      type: object
-      description: Basic information about a specific decentralized exchange.
-      properties:
-        id:
-          type: string
-          description: 'Unique identifier for the DEX (e.g., "uniswap_v2").'
-        name:
-          type: string
-          description: 'Human-readable name for the DEX (e.g., "Uniswap V2").'
-      example:
-        id: uniswap_v2
-        name: Uniswap V2
-    ArrayOfTokens:
-      type: array
-      description: A simple array of token objects.
-      items:
-        $ref: "#/components/schemas/Token"
     Token:
       type: object
       description: "Essential information for a token, including metadata and status."
@@ -1518,9 +1555,15 @@ components:
         symbol:
           type: string
           description: 'Ticker symbol of the token (e.g., "USDC").'
+        chain:
+          type: string
+          description: 'Blockchain network where the token exists (e.g., "ethereum", "solana").'
         decimals:
           type: number
           description: "Decimal precision of the token (e.g., 6 for USDC)."
+        total_supply:
+          type: number
+          description: "Total supply of the token."
         description:
           type: string
           description: >-
@@ -1532,6 +1575,17 @@ components:
         explorer:
           type: string
           description: Link to a block explorer or analytics page for this token.
+        added_at:
+          type: string
+          format: date-time
+          description: When the token was added to the system.
+        fdv:
+          type: number
+          description: Fully diluted valuation of the token.
+        last_updated:
+          type: string
+          format: date-time
+          description: When the token data was last updated.
         summary:
           $ref: "#/components/schemas/TokenSummary"
       example:
@@ -1591,6 +1645,7 @@ components:
           sells: 150
           buys: 180
           txns: 330
+          last_price_usd_change: 50.0
         6h:
           volume: 25000
           volume_usd: 25500
@@ -1599,6 +1654,7 @@ components:
           buy_usd: 12500
           sell_usd: 13000
           txns: 95
+          last_price_usd_change: 10.0
         1h:
           volume: 5000
           volume_usd: 5100
@@ -1607,6 +1663,7 @@ components:
           sells: 10
           buys: 15
           txns: 25
+          last_price_usd_change: 2.0
         30m:
           volume: 2500
           volume_usd: 2550
@@ -1615,6 +1672,7 @@ components:
           sells: 5
           buys: 8
           txns: 13
+          last_price_usd_change: 1.0
         15m:
           volume: 1250
           volume_usd: 1275
@@ -1623,6 +1681,7 @@ components:
           sells: 2
           buys: 4
           txns: 6
+          last_price_usd_change: 0.5
         5m:
           volume: 500
           volume_usd: 510
@@ -1631,6 +1690,7 @@ components:
           sells: 1
           buys: 1
           txns: 2
+          last_price_usd_change: -0.5
         1m:
           volume: 100
           volume_usd: 102
@@ -1639,6 +1699,7 @@ components:
           sells: 1
           buys: 0
           txns: 1
+          last_price_usd_change: 0.0
     TimeIntervalMetrics:
       type: object
       description: >
@@ -1668,6 +1729,58 @@ components:
         txns:
           type: integer
           description: Total number of transactions during the interval.
+        last_price_usd_change:
+          type: number
+          description: The percentage change between the current price and the price from the given interval.
+
+    OHLCVRecord:
+      type: object
+      description: Represents a single Open-High-Low-Close-Volume (OHLCV) data point for a specific time interval.
+      properties:
+        time_open:
+          type: string
+          format: date-time
+          description: The opening timestamp of the OHLCV period.
+          example: "2023-10-27T10:00:00Z"
+        time_close:
+          type: string
+          format: date-time
+          description: The closing timestamp of the OHLCV period.
+          example: "2023-10-27T11:00:00Z"
+        open:
+          type: number
+          format: double
+          description: The opening price for the period.
+          example: 1500.50
+        high:
+          type: number
+          format: double
+          description: The highest price reached during the period.
+          example: 1525.75
+        low:
+          type: number
+          format: double
+          description: The lowest price reached during the period.
+          example: 1495.25
+        close:
+          type: number
+          format: double
+          description: The closing price for the period.
+          example: 1510.00
+        volume:
+          type: integer
+          format: int64
+          description: The total volume traded during the period.
+          example: 1234567890123
+      required:
+        - time_open
+        - time_close
+        - open
+        - high
+        - low
+        - close
+        - volume
+
     Transaction:
       type: object
       description: >
@@ -1707,24 +1820,19 @@ components:
         created_at_block_number:
           type: number
           description: The block number at which this transaction was recorded.
-    ArrayOfNetworks:
-      type: array
-      description: A simple list of networks.
-      items:
-        $ref: "#/components/schemas/Network"
     Network:
       type: object
       description: Metadata about a blockchain network.
       properties:
         id:
-          type: number
-          description: "Numerical ID referencing the network (e.g., 1 for Ethereum mainnet)."
-        name:
           type: string
-          description: 'String identifier for the network (e.g., "ethereum").'
+          description: 'String identifier for the network (e.g., "ethereum", "solana").'
+        display_name:
+          type: string
+          description: 'Human-readable display name for the network (e.g., "Ethereum").'
       example:
-        id: 1
-        name: ethereum
+        id: "ethereum"
+        display_name: "Ethereum"
     PoolWithPrices:
       type: object
       description: >-
@@ -1740,6 +1848,9 @@ components:
         dex_name:
           type: string
           description: 'Human-readable DEX name (e.g., "Uniswap V3").'
+        chain:
+          type: string
+          description: The blockchain network this pool resides on (e.g., "ethereum", "solana").
         created_at_block_number:
           type: number
           description: Block number at which this pool was created.
@@ -1765,21 +1876,18 @@ components:
         last_price_change_usd_5m:
           type: number
           description: >-
-            USD price change over the last 5 minutes, either as a percentage or
-            absolute value.
+            USD price change over the last 5 minutes as a percentage.
         last_price_change_usd_1h:
           type: number
           description: >-
-            USD price change over the last 1 hour, either as a percentage or
-            absolute value.
+            USD price change over the last 1 hour as a percentage.
         last_price_change_usd_24h:
           type: number
           description: >-
-            USD price change over the last 24 hours, either as a percentage or
-            absolute value.
+            USD price change over the last 24 hours as a percentage.
         fee:
-          type: number
-          description: "Trading fee (e.g., 0.3 for 0.3%) associated with this pool."
+          type: [number, "null"]
+          description: "Trading fee (e.g., 0.3 for 0.3%) associated with this pool. Null indicates fee information is not collected."
         tokens:
           type: array
           description: The tokens participating in this liquidity pool.
@@ -1808,8 +1916,8 @@ components:
         type: integer
         default: 10
         minimum: 1
-        maximum: 500
-      description: Number of items to return per page (max 500).
+        maximum: 100
+      description: Number of items to return per page (max 100).
     sortParam:
       name: sort
       in: query
@@ -1887,37 +1995,46 @@ components:
       required: true
       schema:
         type: string
-      description: >
-        **Required** start time for historical data. Can be ISO-8601, a simple
-        date (yyyy-mm-dd), or a Unix timestamp in seconds (e.g., `1518671700`).
+        description: |
+          Start time for the OHLCV data.
+          Accepted formats:
+          - Unix timestamp
+          - RFC3339 timestamp (e.g., "2023-10-27T08:07:20Z")
+          - Date (e.g., "2023-10-27", interpreted as 00:00:00 UTC)
+        example: "1741507640"
     ohlcvEndParam:
       name: end
       in: query
       required: false
       schema:
         type: string
-      description: >
-        Optional end time for historical data (max 1 year from start).   If not
-        provided, the endpoint calculates or defaults based on `limit`.
+        description: |
+          Start time for the OHLCV data.
+          Accepted formats:
+          - Unix timestamp
+          - RFC3339 timestamp (e.g., "2023-10-27T10:00:00Z")
+          - Date (e.g., "2023-10-27", interpreted as 00:00:00 UTC)
+        example: "1741508640"
     ohlcvLimitParam:
       name: limit
       in: query
       required: false
       schema:
         type: integer
+        format: int32
         default: 1
-      description: |
-        Number of rows (candlesticks or data points) to retrieve (max `366`).
+        minimum: 1
+        maximum: 366
+      description: Maximum number of OHLCV records to return.
     ohlcvIntervalParam:
       name: interval
       in: query
       required: false
       schema:
         type: string
-        default: 24h
-      description: >
-        Interval granularity for OHLCV data.   Supported values: `1m`, `5m`,
-        `10m`, `15m`, `30m`, `1h`, `6h`, `12h`, `24h`.
+        enum: ["1m", "5m", "10m", "15m", "30m", "1h", "6h", "12h", "24h"]
+        default: "24h"
+      description: The time interval for each OHLCV record (candle).
     ohlcvInvertedPriceParam:
       name: inversed
       in: query

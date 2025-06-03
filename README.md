@@ -17,6 +17,10 @@ npx dexpaprika-mcp
 
 DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No API keys required. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
 
+## 🚨 Version 1.1.0 Update Notice
+
+**Breaking Change**: The global `/pools` endpoint has been removed. If you're upgrading from v1.0.x, please see the [Migration Guide](#migration-from-v10x-to-v110) below.
+
 ## What Can You Build?
 
 - **Token Analysis Tools**: Track price movements, liquidity depth changes, and volume patterns
@@ -76,6 +80,36 @@ Add the following to your Claude Desktop configuration file:
 
 After restarting Claude Desktop, the DexPaprika tools will be available to Claude automatically.
 
+## Migration from v1.0.x to v1.1.0
+
+### ⚠️ Breaking Changes
+
+The global `getTopPools` function has been **removed** due to API deprecation. 
+
+### Migration Steps
+
+**Before (v1.0.x):**
+```javascript
+// This will no longer work
+getTopPools({ page: 0, limit: 10, sort: 'desc', orderBy: 'volume_usd' })
+```
+
+**After (v1.1.0):**
+```javascript
+// Use network-specific queries instead
+getNetworkPools({ network: 'ethereum', page: 0, limit: 10, sort: 'desc', orderBy: 'volume_usd' })
+getNetworkPools({ network: 'solana', page: 0, limit: 10, sort: 'desc', orderBy: 'volume_usd' })
+
+// To query multiple networks, call getNetworkPools for each network
+// Or use the search function for cross-network searches
+```
+
+### Benefits of the New Approach
+
+- **Better Performance**: Network-specific queries are faster and more efficient
+- **More Relevant Results**: Get pools that are actually relevant to your use case
+- **Improved Scalability**: Better suited for handling large amounts of data across networks
+
 ## Technical Capabilities
 
 The MCP server exposes these specific endpoints Claude can access:
@@ -91,8 +125,7 @@ The MCP server exposes these specific endpoints Claude can access:
 
 | Function | Description | Required Parameters | Example Usage |
 |----------|-------------|---------------------|--------------|
-| `getTopPools` | Gets top liquidity pools across all networks | `limit`, `orderBy` | Fetch top 10 pools by 24h volume |
-| `getNetworkPools` | Gets top pools on a specific network | `network`, `limit` | Get Solana's highest liquidity pools | 
+| `getNetworkPools` | **[PRIMARY]** Gets top pools on a specific network | `network`, `limit` | Get Solana's highest liquidity pools | 
 | `getDexPools` | Gets top pools for a specific DEX | `network`, `dex` | List pools on Uniswap V3 |
 | `getPoolDetails` | Gets detailed pool metrics | `network`, `poolAddress` | Complete metrics for USDC/ETH pool |
 | `getPoolOHLCV` | Retrieves time-series price data for various analytical purposes (technical analysis, ML models, backtesting) | `network`, `poolAddress`, `start`, `interval` | 7-day hourly candles for SOL/USDC |
@@ -123,6 +156,13 @@ const jupiterPools = await getTokenPools({
   limit: 5
 });
 
+// Get top pools on Ethereum (v1.1.0 approach):
+const ethereumPools = await getNetworkPools({
+  network: "ethereum",
+  orderBy: "volume_usd",
+  limit: 10
+});
+
 // Get historical price data for various analytical purposes (technical analysis, ML models, backtesting):
 const ohlcvData = await getPoolOHLCV({
   network: "ethereum",
@@ -135,17 +175,17 @@ const ohlcvData = await getPoolOHLCV({
 
 ## Sample Prompts for Claude
 
-When working with Claude, try these specific technical queries:
+When working with Claude, try these specific technical queries (updated for v1.1.0):
 
 - "Analyze the JUP token on Solana. Fetch price, volume, and top liquidity pools."
 - "Compare trading volume between Uniswap V3 and SushiSwap on Ethereum."
 - "Get the 7-day OHLCV data for SOL/USDC on Raydium and plot a price chart."
 - "Find the top 5 pools by liquidity on Fantom network and analyze their fee structures."
 - "Get recent transactions for the ETH/USDT pool on Uniswap and analyze buy vs sell pressure."
-- "Which tokens have seen >10% price increases in the last 24h on Binance Smart Chain?"
+- "Show me the top 10 pools on Ethereum by 24h volume using getNetworkPools."
 - "Search for all pools containing the ARB token and rank them by volume."
 - "Retrieve OHLCV data for BTC/USDT to analyze volatility patterns and build a price prediction model."
-
+- "First get all available networks, then show me the top pools on each major network."
 
 ## Rate Limits & Performance
 
@@ -164,6 +204,11 @@ When working with Claude, try these specific technical queries:
 - **Timeout errors**: Large data requests may take longer, consider pagination
 - **Network errors**: Check network connectivity, the service requires internet access
 - **OHLCV limitations**: Maximum range between start and end dates is 1 year; use pagination for longer timeframes
+
+**Migration Issues:**
+
+- **"getTopPools not found"**: This function has been removed. Use `getNetworkPools` instead with a specific network parameter
+- **"410 Gone" errors**: You're using a deprecated endpoint. Check the error message for guidance on the correct endpoint to use
 
 ## Development
 
@@ -184,6 +229,10 @@ npm run build
 # Run tests
 npm test
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed release notes and migration guides.
 
 ## License
 
