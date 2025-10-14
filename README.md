@@ -17,6 +17,10 @@ npx dexpaprika-mcp
 
 DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No API keys required. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
 
+## 🚨 Version 1.2.0 Update Highlights
+
+**New**: Batched token prices tool `getTokenMultiPrices` and enhanced `getNetworkDexes` parameters. See examples below.
+
 ## 🚨 Version 1.1.0 Update Notice
 
 **Breaking Change**: The global `/pools` endpoint has been removed. If you're upgrading from v1.0.x, please see the [Migration Guide](#migration-from-v10x-to-v110) below.
@@ -137,6 +141,7 @@ The MCP server exposes these specific endpoints Claude can access:
 |----------|-------------|---------------------|--------------|
 | `getTokenDetails` | Gets comprehensive token data | `network`, `tokenAddress` | `price_usd`, `volume_24h`, `liquidity_usd`, etc. |
 | `getTokenPools` | Lists pools containing a token | `network`, `tokenAddress` | Returns all pools with liquidity metrics |
+| `getTokenMultiPrices` | Batched USD prices for multiple tokens | `network`, `tokens[]` | Array of `{ id, chain, price_usd }` |
 | `search` | Finds tokens, pools, DEXes by name/id | `query` | Multi-entity search results |
 
 ### Example Usage
@@ -170,6 +175,15 @@ const ohlcvData = await getPoolOHLCV({
   start: "2023-01-01",
   interval: "1d",
   limit: 30
+});
+
+// 1.2.0: Get batched prices for multiple tokens (repeatable tokens query)
+const prices = await getTokenMultiPrices({
+  network: "ethereum",
+  tokens: [
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // WETH
+    "0xdac17f958d2ee523a2206206994597c13d831ec7"  // USDT
+  ]
 });
 ```
 

@@ -48,7 +48,7 @@ function formatMcpResponse(data) {
 // MCP server instance
 const server = new McpServer({
   name: 'dexpaprika-mcp',
-  version: '1.1.0',
+  version: '1.2.0',
   description: 'MCP server for accessing DexPaprika API data for decentralized exchanges and tokens',
 });
 
@@ -86,10 +86,16 @@ server.tool(
   {
     network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
     page: z.number().optional().default(0).describe('Page number for pagination'),
-    limit: z.number().optional().default(10).describe('Number of items per page')
+    limit: z.number().optional().default(10).describe('Number of items per page (max 100)'),
+    sort: z.enum(['asc', 'desc']).optional().default('desc').describe('Sort order'),
+    orderBy: z.enum(['pool']).optional().describe('How to order the returned data')
   },
-  async ({ network, page, limit }) => {
-    const data = await fetchFromAPI(`/networks/${network}/dexes?page=${page}&limit=${limit}`);
+  async ({ network, page, limit, sort, orderBy }) => {
+    let endpoint = `/networks/${network}/dexes?page=${page}&limit=${limit}&sort=${sort}`;
+    if (orderBy) {
+      endpoint += `&order_by=${orderBy}`;
+    }
+    const data = await fetchFromAPI(endpoint);
     return formatMcpResponse(data);
   }
 );
@@ -253,6 +259,22 @@ server.tool(
   {},
   async () => {
     const data = await fetchFromAPI('/stats');
+    return formatMcpResponse(data);
+  }
+);
+
+// getTokenMultiPrices
+server.tool(
+  'getTokenMultiPrices',
+  'Get batched prices for multiple tokens on a specific network. Pass an array of token addresses; unknown tokens are omitted.',
+  {
+    network: z.string().describe('Network ID from getNetworks (e.g., "ethereum", "solana")'),
+    tokens: z.array(z.string()).nonempty().describe('Array of token contract addresses. Serialized as repeatable query (?tokens=a&tokens=b).')
+  },
+  async ({ network, tokens }) => {
+    const repeatedTokensQuery = tokens.map(t => `tokens=${encodeURIComponent(t)}`).join('&');
+    const endpoint = `/networks/${network}/multi/prices?${repeatedTokensQuery}`;
+    const data = await fetchFromAPI(endpoint);
     return formatMcpResponse(data);
   }
 );

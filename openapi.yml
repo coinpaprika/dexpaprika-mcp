@@ -1,4 +1,6 @@
 openapi: 3.1.0
+x-mcp:
+  enabled: true
 security: []
 info:
   title: DexPaprika API
@@ -8,8 +10,6 @@ info:
       Welcome to the DexPaprika API! This product is developed by [CoinPaprika](https://coinpaprika.com).
 
       Our API enables developers to query token, pool, and DEX data across multiple blockchain networks. Feel free to explore our endpoints below.
-
-
       ---
     # Getting Started
 
@@ -1492,6 +1492,58 @@ paths:
                   error:
                     type: string
                     example: Unexpected server error. Please try again later.
+  "/networks/{network}/multi/prices":
+    get:
+      operationId: getTokenMultiPrices
+      tags:
+        - Tokens
+      summary: Get batched prices for multiple tokens on a network.
+      description: |
+        Retrieves the current USD price for a list of specified token addresses 
+        in a single API call. This is more efficient than making multiple requests 
+        to the single-token detail endpoint when you only need pricing information.
+      parameters:
+        - $ref: "#/components/parameters/networkParam"
+        - name: tokens
+          in: query
+          required: true
+          description: |
+            The token contract address. To query multiple tokens, repeat this parameter for each address.
+            For example: `?tokens=0xc02...ec7&tokens=0xda...1ec7`
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: Successful operation. Returns a list of prices.
+          content:
+            application/json:
+              schema:
+                type: array
+                description: An array of price objects. Tokens for which a price could not be found are omitted from the list.
+                items:
+                  $ref: "#/components/schemas/AssetPrice"
+              example:
+                - id: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+                  chain: "ethereum"
+                  price_usd: 4400.5697112921534809
+                - id: "0xdac17f958d2ee523a2206206994597c13d831ec7"
+                  chain: "ethereum"
+                  price_usd: 1.0002529851244053
+        "400":
+          description: Bad request. The network is unsupported or the token list is invalid/empty.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                example:
+                  error: "at least one valid token required."
 components:
   schemas:
     ArrayOfDexes:
@@ -1808,18 +1860,45 @@ components:
         token_0:
           type: string
           description: The primary token's address (or symbol) for this transaction.
+        token_0_symbol:
+          type: string
+          description: The primary token's symbol for this transaction.
         token_1:
           type: string
           description: The secondary token's address (or symbol) for this transaction.
+        token_1_symbol:
+          type: string
+          description: The secondary token's symbol for this transaction.
         amount_0:
           type: string
           description: Amount of token_0 transferred/swapped.
         amount_1:
           type: string
           description: Amount of token_1 transferred/swapped.
+        price_0:
+          type: number
+          format: double
+          description: Price of token_0
+        price_1:
+          type: number
+          format: double
+          description: Price of token_1
+        price_0_usd:
+          type: number
+          format: double
+          description: Price of token_0 in USD.
+        price_1_usd:
+          type: number
+          format: double
+          description: Price of token_1 in USD.
         created_at_block_number:
           type: number
           description: The block number at which this transaction was recorded.
+        created_at:
+          type: string
+          format: date-time
+          description: The timestamp when this transaction was created.
+
     Network:
       type: object
       description: Metadata about a blockchain network.
@@ -1900,6 +1979,22 @@ components:
                     fdv:
                       type: number
                       description: Fully diluted valuation of token.
+    AssetPrice:
+      type: object
+      properties:
+        chain:
+          type: string
+          description: The blockchain identifier.
+          example: "ethereum"
+        id:
+          type: string
+          description: The unique identifier for the token.
+          example: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+        price_usd:
+          type: number
+          description: The current price of the token in USD.
+          example: 1850.75
+
   parameters:
     pageParam:
       name: page

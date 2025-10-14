@@ -2,6 +2,24 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [1.2.0] - 2025-10-14
+
+### ✨ Added
+
+- New MCP tool: `getTokenMultiPrices` for batched token price retrieval via repeatable `tokens` query parameters (e.g., `?tokens=a&tokens=b`). Unknown tokens are omitted from the response.
+
+### 🔧 Changed
+
+- `getNetworkDexes` now supports `sort` (asc|desc) and `order_by=pool` to align with the latest OpenAPI.
+- Updated tests to cover the new batched prices endpoint and expanded parameter combinations.
+- Documentation updates in README for 1.2.0 usage examples and configuration notes.
+- Version bumped to 1.2.0.
+
+### 📝 Notes for 1.2.0
+
+- No breaking changes in this release.
+- The batched prices endpoint improves efficiency when you only need current USD prices for multiple tokens.
+
 ## [1.1.0] - 2025-01-27
 
 ### ⚠️ BREAKING CHANGES
