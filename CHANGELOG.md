@@ -2,6 +2,69 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [1.3.0] - 2026-03-19
+
+### ⚠️ BREAKING CHANGES
+
+#### Parameter Naming — snake_case Alignment
+All tool parameters now use snake_case to match the hosted MCP server at `mcp.dexpaprika.com`:
+- `poolAddress` → `pool_address` (getPoolDetails, getPoolOHLCV, getPoolTransactions)
+- `tokenAddress` → `token_address` (getTokenDetails, getTokenPools)
+- `orderBy` → `order_by` (getNetworkDexes, getNetworkPools, getDexPools, getTokenPools)
+
+#### Pagination — 1-indexed
+All `page` parameters now default to `1` (1-indexed) instead of `0` (0-indexed), matching the hosted server behavior.
+
+#### Token Multi Prices — Comma-Separated Format
+`getTokenMultiPrices` now serializes tokens as a single comma-separated query param (`?tokens=a,b,c`) instead of repeated params (`?tokens=a&tokens=b`).
+
+### ✨ Added
+
+- **New tool: `getCapabilities`** — Returns server capabilities, workflow patterns, network synonyms, common pitfalls, and best-practice sequences. Essential for agent onboarding.
+- **New tool: `getNetworkPoolsFilter`** — Server-side pool filtering by volume (`volume_24h_min`, `volume_24h_max`), transactions (`txns_24h_min`), and creation time (`created_after`, `created_before`). More efficient than client-side filtering.
+- **Structured error handling** — All errors now return structured objects with `code`, `message`, `retryable`, `suggestion`, `corrected_example`, and `metadata` fields. Error codes include `DP400_INVALID_NETWORK`, `DP404_NOT_FOUND`, `DP429_RATE_LIMIT`, etc.
+- **Response metadata** — All successful responses now include `meta` with `rate_limit` info, `response_time_ms`, and `timestamp`.
+- **Batch validation** — `getTokenMultiPrices` now validates max 10 tokens and returns a structured error if exceeded.
+- **OHLCV interval validation** — `interval` parameter on `getPoolOHLCV` now uses `z.enum()` for strict validation of allowed values.
+
+### 🔧 Changed
+
+- All tool descriptions updated to match the hosted MCP server exactly (added TIP references, REQUIRED/OPTIONAL labels).
+- Server name changed from `dexpaprika-mcp` to `dexpaprika` to match hosted server.
+- JSON responses are now pretty-printed (`JSON.stringify(data, null, 2)`).
+- Startup log uses `console.error` instead of `console.log` (proper MCP stdio convention).
+- Version bumped to 1.3.0.
+
+### 📝 Notes
+
+- The npm package now matches the hosted MCP server at `mcp.dexpaprika.com` exactly — same tools, same schemas, same error handling, same response format.
+- All 14 tools are now available: getCapabilities, getNetworks, getNetworkDexes, getNetworkPools, getDexPools, getNetworkPoolsFilter, getPoolDetails, getPoolOHLCV, getPoolTransactions, getTokenDetails, getTokenPools, getTokenMultiPrices, search, getStats.
+- For users who prefer a hosted solution with zero setup, use `mcp.dexpaprika.com/streamable-http` directly.
+
+### 🔄 Migration Guide
+
+**Parameter renames:**
+```javascript
+// Before (v1.2.0)
+getPoolDetails({ network: 'ethereum', poolAddress: '0x...', inversed: false })
+getTokenDetails({ network: 'ethereum', tokenAddress: '0x...' })
+getNetworkPools({ network: 'ethereum', orderBy: 'volume_usd' })
+
+// After (v1.3.0)
+getPoolDetails({ network: 'ethereum', pool_address: '0x...', inversed: false })
+getTokenDetails({ network: 'ethereum', token_address: '0x...' })
+getNetworkPools({ network: 'ethereum', order_by: 'volume_usd' })
+```
+
+**Pagination:**
+```javascript
+// Before: 0-indexed
+getNetworkPools({ network: 'ethereum', page: 0 })
+
+// After: 1-indexed
+getNetworkPools({ network: 'ethereum', page: 1 })
+```
+
 ## [1.2.0] - 2025-10-14
 
 ### ✨ Added

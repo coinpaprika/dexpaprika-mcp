@@ -17,13 +17,13 @@ npx dexpaprika-mcp
 
 DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No API keys required. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
 
-## 🚨 Version 1.2.0 Update Highlights
+> **Prefer zero setup?** Use the hosted MCP server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com) — no installation, no API key, same 14 tools. See [Hosted Alternative](#hosted-alternative-no-installation) for transport endpoints.
 
-**New**: Batched token prices tool `getTokenMultiPrices` and enhanced `getNetworkDexes` parameters. See examples below.
+## Version 1.3.0 Update Highlights
 
-## 🚨 Version 1.1.0 Update Notice
+**New tools**: `getCapabilities` (agent onboarding with workflows, synonyms, best practices) and `getNetworkPoolsFilter` (server-side pool filtering by volume, transactions, creation time).
 
-**Breaking Change**: The global `/pools` endpoint has been removed. If you're upgrading from v1.0.x, please see the [Migration Guide](#migration-from-v10x-to-v110) below.
+**Breaking**: Parameters renamed to snake_case (`poolAddress` → `pool_address`, `tokenAddress` → `token_address`, `orderBy` → `order_by`). Pagination is now 1-indexed. See [CHANGELOG.md](CHANGELOG.md) for full migration guide.
 
 ## What Can You Build?
 
@@ -68,7 +68,7 @@ Watch our step-by-step tutorial on setting up and using the DexPaprika MCP serve
 
 Add the following to your Claude Desktop configuration file:
 
-**macOS**: `~/Library/Application\ Support/Claude/claude_desktop_config.json`  
+**macOS**: `~/Library/Application\ Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
 
 ```json
@@ -84,145 +84,150 @@ Add the following to your Claude Desktop configuration file:
 
 After restarting Claude Desktop, the DexPaprika tools will be available to Claude automatically.
 
-## Migration from v1.0.x to v1.1.0
+### Hosted Alternative (No Installation)
 
-### ⚠️ Breaking Changes
+If you prefer zero setup, point any MCP-compatible client directly at the hosted server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com). The landing page provides setup instructions and documentation. The following transport endpoints are available:
 
-The global `getTopPools` function has been **removed** due to API deprecation. 
+| Transport | Endpoint | Use Case |
+|-----------|----------|----------|
+| Streamable HTTP | `https://mcp.dexpaprika.com/streamable-http` | Recommended for most clients |
+| SSE | `https://mcp.dexpaprika.com/sse` | Legacy SSE transport |
+| JSON-RPC | `https://mcp.dexpaprika.com/mcp` | Direct JSON-RPC |
 
-### Migration Steps
+> **Note**: These are MCP protocol endpoints — they won't display anything in a browser. Visit [mcp.dexpaprika.com](https://mcp.dexpaprika.com) for the landing page.
 
-**Before (v1.0.x):**
-```javascript
-// This will no longer work
-getTopPools({ page: 0, limit: 10, sort: 'desc', orderBy: 'volume_usd' })
+```json
+{
+  "mcpServers": {
+    "dexpaprika": {
+      "type": "streamable-http",
+      "url": "https://mcp.dexpaprika.com/streamable-http"
+    }
+  }
+}
 ```
 
-**After (v1.1.0):**
-```javascript
-// Use network-specific queries instead
-getNetworkPools({ network: 'ethereum', page: 0, limit: 10, sort: 'desc', orderBy: 'volume_usd' })
-getNetworkPools({ network: 'solana', page: 0, limit: 10, sort: 'desc', orderBy: 'volume_usd' })
+## Available Tools (14)
 
-// To query multiple networks, call getNetworkPools for each network
-// Or use the search function for cross-network searches
-```
+### Discovery
 
-### Benefits of the New Approach
+| Tool | Description |
+|------|-------------|
+| `getCapabilities` | Server capabilities, workflow patterns, network synonyms, and best practices. **Start here.** |
+| `getNetworks` | List all 33 supported blockchain networks |
+| `getStats` | High-level ecosystem stats (total networks, DEXes, pools, tokens) |
+| `search` | Search tokens, pools, and DEXes across ALL networks by name, symbol, or address |
 
-- **Better Performance**: Network-specific queries are faster and more efficient
-- **More Relevant Results**: Get pools that are actually relevant to your use case
-- **Improved Scalability**: Better suited for handling large amounts of data across networks
+### DEX Operations
 
-## Technical Capabilities
-
-The MCP server exposes these specific endpoints Claude can access:
-
-### Network Operations
-
-| Function | Description | Example |
-|----------|-------------|---------|
-| `getNetworks` | Retrieves all supported blockchain networks and metadata | `{"id": "ethereum", "name": "Ethereum", "symbol": "ETH", ...}` |
-| `getNetworkDexes` | Lists DEXes available on a specific network | `{"dexes": [{"id": "uniswap_v3", "name": "Uniswap V3", ...}]}` |
+| Tool | Description | Required Parameters |
+|------|-------------|---------------------|
+| `getNetworkDexes` | List DEXes on a specific network | `network` |
 
 ### Pool Operations
 
-| Function | Description | Required Parameters | Example Usage |
-|----------|-------------|---------------------|--------------|
-| `getNetworkPools` | **[PRIMARY]** Gets top pools on a specific network | `network`, `limit` | Get Solana's highest liquidity pools | 
-| `getDexPools` | Gets top pools for a specific DEX | `network`, `dex` | List pools on Uniswap V3 |
-| `getPoolDetails` | Gets detailed pool metrics | `network`, `poolAddress` | Complete metrics for USDC/ETH pool |
-| `getPoolOHLCV` | Retrieves time-series price data for various analytical purposes (technical analysis, ML models, backtesting) | `network`, `poolAddress`, `start`, `interval` | 7-day hourly candles for SOL/USDC |
-| `getPoolTransactions` | Lists recent transactions in a pool | `network`, `poolAddress` | Last 20 swaps in a specific pool |
+| Tool | Description | Required Parameters |
+|------|-------------|---------------------|
+| `getNetworkPools` | **PRIMARY** — Get top liquidity pools on a network | `network` |
+| `getDexPools` | Get pools from a specific DEX | `network`, `dex` |
+| `getNetworkPoolsFilter` | Filter pools by volume, transactions, creation time | `network` |
+| `getPoolDetails` | Detailed pool info (price, volume, TVL, tokens) | `network`, `pool_address` |
+| `getPoolOHLCV` | Historical OHLCV candle data | `network`, `pool_address`, `start` |
+| `getPoolTransactions` | Recent transactions/trades for a pool | `network`, `pool_address` |
 
 ### Token Operations
 
-| Function | Description | Required Parameters | Output Fields |
-|----------|-------------|---------------------|--------------|
-| `getTokenDetails` | Gets comprehensive token data | `network`, `tokenAddress` | `price_usd`, `volume_24h`, `liquidity_usd`, etc. |
-| `getTokenPools` | Lists pools containing a token | `network`, `tokenAddress` | Returns all pools with liquidity metrics |
-| `getTokenMultiPrices` | Batched USD prices for multiple tokens | `network`, `tokens[]` | Array of `{ id, chain, price_usd }` |
-| `search` | Finds tokens, pools, DEXes by name/id | `query` | Multi-entity search results |
+| Tool | Description | Required Parameters |
+|------|-------------|---------------------|
+| `getTokenDetails` | Detailed token information | `network`, `token_address` |
+| `getTokenPools` | Liquidity pools containing a token | `network`, `token_address` |
+| `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
 
 ### Example Usage
 
 ```javascript
-// With Claude, get details about a specific token:
+// Start by getting capabilities for workflow guidance:
+const caps = await getCapabilities();
+
+// Get details about a specific token:
 const solanaJupToken = await getTokenDetails({
-  network: "solana", 
-  tokenAddress: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+  network: "solana",
+  token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 });
 
 // Find all pools for a specific token with volume sorting:
 const jupiterPools = await getTokenPools({
-  network: "solana", 
-  tokenAddress: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-  orderBy: "volume_usd",
+  network: "solana",
+  token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+  order_by: "volume_usd",
   limit: 5
 });
 
-// Get top pools on Ethereum (v1.1.0 approach):
+// Get top pools on Ethereum:
 const ethereumPools = await getNetworkPools({
   network: "ethereum",
-  orderBy: "volume_usd",
+  order_by: "volume_usd",
   limit: 10
 });
 
-// Get historical price data for various analytical purposes (technical analysis, ML models, backtesting):
+// Filter pools by volume and creation time:
+const filteredPools = await getNetworkPoolsFilter({
+  network: "ethereum",
+  volume_24h_min: 100000,
+  created_after: 1710806400,
+  sort_by: "volume_24h",
+  limit: 20
+});
+
+// Get historical price data:
 const ohlcvData = await getPoolOHLCV({
   network: "ethereum",
-  poolAddress: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640", // ETH/USDC on Uniswap V3
+  pool_address: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
   start: "2023-01-01",
-  interval: "1d",
+  interval: "24h",
   limit: 30
 });
 
-// 1.2.0: Get batched prices for multiple tokens (repeatable tokens query)
+// Batch prices for multiple tokens (max 10):
 const prices = await getTokenMultiPrices({
   network: "ethereum",
   tokens: [
-    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // WETH
-    "0xdac17f958d2ee523a2206206994597c13d831ec7"  // USDT
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+    "0xdac17f958d2ee523a2206206994597c13d831ec7"
   ]
 });
 ```
 
 ## Sample Prompts for Claude
 
-When working with Claude, try these specific technical queries (updated for v1.1.0):
-
 - "Analyze the JUP token on Solana. Fetch price, volume, and top liquidity pools."
 - "Compare trading volume between Uniswap V3 and SushiSwap on Ethereum."
 - "Get the 7-day OHLCV data for SOL/USDC on Raydium and plot a price chart."
 - "Find the top 5 pools by liquidity on Fantom network and analyze their fee structures."
 - "Get recent transactions for the ETH/USDT pool on Uniswap and analyze buy vs sell pressure."
-- "Show me the top 10 pools on Ethereum by 24h volume using getNetworkPools."
+- "Show me the top 10 pools on Ethereum by 24h volume."
 - "Search for all pools containing the ARB token and rank them by volume."
-- "Retrieve OHLCV data for BTC/USDT to analyze volatility patterns and build a price prediction model."
+- "Filter Ethereum pools with >$100K 24h volume created in the last week."
 - "First get all available networks, then show me the top pools on each major network."
 
 ## Rate Limits & Performance
 
-- **Free Tier Limits**: 60 requests per minute
+- **Free Tier Limits**: 10,000 requests per day
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Data Freshness**: Pool and token data updated every 15-30s
-- **Error Handling**: 429 status codes indicate rate limiting
+- **Error Handling**: Structured errors with codes, suggestions, and retry guidance
 - **OHLCV Data Availability**: Historical data typically available from token/pool creation date
 
 ## Troubleshooting
 
 **Common Issues:**
 
-- **Rate limiting**: If receiving 429 errors, reduce request frequency
+- **Rate limiting**: If receiving `DP429_RATE_LIMIT` errors, implement exponential backoff
 - **Missing data**: Some newer tokens/pools may have incomplete historical data
 - **Timeout errors**: Large data requests may take longer, consider pagination
 - **Network errors**: Check network connectivity, the service requires internet access
 - **OHLCV limitations**: Maximum range between start and end dates is 1 year; use pagination for longer timeframes
-
-**Migration Issues:**
-
-- **"getTopPools not found"**: This function has been removed. Use `getNetworkPools` instead with a specific network parameter
-- **"410 Gone" errors**: You're using a deprecated endpoint. Check the error message for guidance on the correct endpoint to use
+- **Empty OHLCV**: Pool may be too new — use `getPoolTransactions` instead
 
 ## Development
 
@@ -255,6 +260,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Additional Resources
 
 - [DexPaprika API Documentation](https://docs.dexpaprika.com/introduction)
+- [Hosted MCP Server](https://mcp.dexpaprika.com) — Zero-setup alternative
 - [Model Context Protocol Specification](https://github.com/anthropics/anthropic-cookbook/blob/main/mcp/README.md)
 - [DexPaprika](https://dexpaprika.com) - Comprehensive onchain analytics market data
 - [CoinPaprika](https://coinpaprika.com) - Comprehensive cryptocurrency market data

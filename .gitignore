@@ -50,4 +50,12 @@ coverage
 .idea/
 .vscode/
 *.swp
-*.swo 
+*.swo
+
+# Claude files
+.claude/
+CLAUDE.md
+
+# Working/audit files
+HOSTED-MCP-SPEC.md
+DIFF-REPORT.md
