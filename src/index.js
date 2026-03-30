@@ -287,7 +287,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getNetworkPoolsFilter",
-        description: "Filter pools by volume, transactions, and creation time",
+        description: "Filter pools by volume, liquidity, transactions, and creation time",
         category: "pools",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -295,15 +295,57 @@ async function buildCapabilitiesDocument() {
           limit: { type: "number", required: false, default: 50, max: 100 },
           volume_24h_min: { type: "number", required: false, description: "Minimum 24h volume USD" },
           volume_24h_max: { type: "number", required: false, description: "Maximum 24h volume USD" },
+          volume_7d_min: { type: "number", required: false, description: "Minimum 7d volume USD" },
+          volume_7d_max: { type: "number", required: false, description: "Maximum 7d volume USD" },
+          liquidity_usd_min: { type: "number", required: false, description: "Minimum pool liquidity USD" },
+          liquidity_usd_max: { type: "number", required: false, description: "Maximum pool liquidity USD" },
           txns_24h_min: { type: "number", required: false, description: "Minimum 24h transactions" },
           created_after: { type: "number", required: false, description: "UNIX timestamp" },
           created_before: { type: "number", required: false, description: "UNIX timestamp" },
-          sort_by: { type: "string", required: false, enum: ["volume_24h", "txns_24h", "created_at"], default: "volume_24h" },
+          sort_by: { type: "string", required: false, enum: ["volume_24h", "volume_7d", "volume_30d", "liquidity", "txns_24h", "created_at"], default: "volume_24h" },
           sort_dir: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" }
         },
         returns: { type: "object", properties: ["results", "page_info"] },
         cost: 1,
-        note: "Response uses 'results' key (not 'pools'). Fields: address, volume_usd_24h, txns_24h."
+        note: "Response uses 'results' key (not 'pools'). Fields: address, volume_usd_24h, volume_usd_7d, liquidity_usd, txns_24h."
+      },
+      {
+        name: "filterNetworkTokens",
+        description: "Filter tokens by volume, liquidity, FDV, transactions, and creation time",
+        category: "tokens",
+        parameters: {
+          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
+          page: { type: "number", required: false, default: 1 },
+          limit: { type: "number", required: false, default: 50, max: 100 },
+          volume_24h_min: { type: "number", required: false, description: "Minimum 24h volume USD" },
+          volume_24h_max: { type: "number", required: false, description: "Maximum 24h volume USD" },
+          liquidity_usd_min: { type: "number", required: false, description: "Minimum token liquidity USD" },
+          fdv_min: { type: "number", required: false, description: "Minimum fully diluted valuation USD" },
+          fdv_max: { type: "number", required: false, description: "Maximum fully diluted valuation USD" },
+          txns_24h_min: { type: "number", required: false, description: "Minimum 24h transactions" },
+          created_after: { type: "number", required: false, description: "UNIX timestamp" },
+          created_before: { type: "number", required: false, description: "UNIX timestamp" },
+          sort_by: { type: "string", required: false, enum: ["volume_24h", "volume_7d", "volume_30d", "liquidity_usd", "txns_24h", "created_at", "fdv"], default: "volume_24h" },
+          sort_dir: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" }
+        },
+        returns: { type: "object", properties: ["results", "page_info"] },
+        cost: 1,
+        note: "Response uses 'results' key. Fields: chain, address, price_usd, volume_usd_24h, volume_usd_7d, liquidity_usd, fdv_usd, txns_24h, created_at."
+      },
+      {
+        name: "getTopTokens",
+        description: "Get top tokens on a network ranked by volume, price, liquidity, or activity",
+        category: "tokens",
+        parameters: {
+          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
+          page: { type: "number", required: false, default: 1 },
+          limit: { type: "number", required: false, default: 50, max: 100 },
+          order_by: { type: "string", required: false, enum: ["volume_24h", "price_usd", "liquidity_usd", "txns", "price_change"], default: "volume_24h" },
+          sort: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" }
+        },
+        returns: { type: "object", properties: ["tokens", "page_info"] },
+        cost: 1,
+        note: "Each token includes enriched metadata + multi-timeframe metrics (24h, 1h, 5m) with volume, buys, sells, txns, price change."
       },
       {
         name: "getPoolDetails",
@@ -787,6 +829,7 @@ async function buildCapabilitiesDocument() {
     version_history: {
       "1.1.0": "Added capabilities endpoint and basic workflows; enhanced with detailed examples and guidance",
       "1.2.0": "Added getNetworkPoolsFilter tool; fixed pagination to 1-indexed; updated stats to 33 networks, 28M+ pools, 25M+ tokens",
+      "1.4.0": "Added filterNetworkTokens and getTopTokens tools; expanded getNetworkPoolsFilter with volume_7d, liquidity params; enriched network/dex responses with volume, txns, pools_count",
       "1.3.0": "Synced npm package with hosted MCP server; added getCapabilities, getNetworkPoolsFilter; structured error handling; snake_case parameters",
     },
   };
@@ -899,24 +942,32 @@ server.tool(
 // getNetworkPoolsFilter
 server.tool(
   'getNetworkPoolsFilter',
-  'Filter pools by volume, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min, volume_24h_max, txns_24h_min, created_after, created_before, sort_by, sort_dir.',
+  'Filter pools by volume, liquidity, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after, created_before, sort_by, sort_dir.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
     limit: z.number().optional().default(50).describe("OPTIONAL: Number of items per page (default: 50, max: 100)"),
     volume_24h_min: z.number().optional().describe("OPTIONAL: Minimum 24h volume in USD"),
     volume_24h_max: z.number().optional().describe("OPTIONAL: Maximum 24h volume in USD"),
+    volume_7d_min: z.number().optional().describe("OPTIONAL: Minimum 7d volume in USD"),
+    volume_7d_max: z.number().optional().describe("OPTIONAL: Maximum 7d volume in USD"),
+    liquidity_usd_min: z.number().optional().describe("OPTIONAL: Minimum pool liquidity in USD"),
+    liquidity_usd_max: z.number().optional().describe("OPTIONAL: Maximum pool liquidity in USD"),
     txns_24h_min: z.number().optional().describe("OPTIONAL: Minimum number of transactions in 24h"),
     created_after: z.number().optional().describe("OPTIONAL: Only pools created after this UNIX timestamp"),
     created_before: z.number().optional().describe("OPTIONAL: Only pools created before this UNIX timestamp"),
-    sort_by: z.enum(['volume_24h', 'txns_24h', 'created_at']).optional().default('volume_24h').describe("OPTIONAL: Field to sort by (default: 'volume_24h')"),
+    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity', 'txns_24h', 'created_at']).optional().default('volume_24h').describe("OPTIONAL: Field to sort by (default: 'volume_24h')"),
     sort_dir: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort direction (default: 'desc')")
   },
-  async ({ network, page, limit, volume_24h_min, volume_24h_max, txns_24h_min, created_after, created_before, sort_by, sort_dir }) => {
+  async ({ network, page, limit, volume_24h_min, volume_24h_max, volume_7d_min, volume_7d_max, liquidity_usd_min, liquidity_usd_max, txns_24h_min, created_after, created_before, sort_by, sort_dir }) => {
     try {
       let endpoint = `/networks/${network}/pools/filter?page=${page}&limit=${limit}&sort_by=${sort_by}&sort_dir=${sort_dir}`;
       if (volume_24h_min !== undefined) endpoint += `&volume_24h_min=${volume_24h_min}`;
       if (volume_24h_max !== undefined) endpoint += `&volume_24h_max=${volume_24h_max}`;
+      if (volume_7d_min !== undefined) endpoint += `&volume_7d_min=${volume_7d_min}`;
+      if (volume_7d_max !== undefined) endpoint += `&volume_7d_max=${volume_7d_max}`;
+      if (liquidity_usd_min !== undefined) endpoint += `&liquidity_usd_min=${liquidity_usd_min}`;
+      if (liquidity_usd_max !== undefined) endpoint += `&liquidity_usd_max=${liquidity_usd_max}`;
       if (txns_24h_min !== undefined) endpoint += `&txns_24h_min=${txns_24h_min}`;
       if (created_after !== undefined) endpoint += `&created_after=${created_after}`;
       if (created_before !== undefined) endpoint += `&created_before=${created_before}`;
@@ -1065,6 +1116,66 @@ server.tool(
       }
       const joined = tokens.join(',');
       const endpoint = `/networks/${network}/multi/prices?tokens=${encodeURIComponent(joined)}`;
+      const response = await fetchFromAPI(endpoint);
+      return formatMcpResponse(response);
+    } catch (error) {
+      return formatMcpError(error);
+    }
+  }
+);
+
+// filterNetworkTokens
+server.tool(
+  'filterNetworkTokens',
+  'Filter tokens by volume, liquidity, FDV, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, liquidity_usd_min, fdv_min/max, txns_24h_min, created_after/before, sort_by, sort_dir.',
+  {
+    network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
+    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
+    limit: z.number().optional().default(50).describe("OPTIONAL: Number of items per page (default: 50, max: 100)"),
+    volume_24h_min: z.number().optional().describe("OPTIONAL: Minimum 24h volume in USD"),
+    volume_24h_max: z.number().optional().describe("OPTIONAL: Maximum 24h volume in USD"),
+    liquidity_usd_min: z.number().optional().describe("OPTIONAL: Minimum token liquidity in USD"),
+    fdv_min: z.number().optional().describe("OPTIONAL: Minimum fully diluted valuation in USD"),
+    fdv_max: z.number().optional().describe("OPTIONAL: Maximum fully diluted valuation in USD"),
+    txns_24h_min: z.number().optional().describe("OPTIONAL: Minimum number of transactions in 24h"),
+    created_after: z.number().optional().describe("OPTIONAL: Only tokens created after this UNIX timestamp"),
+    created_before: z.number().optional().describe("OPTIONAL: Only tokens created before this UNIX timestamp"),
+    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'fdv']).optional().default('volume_24h').describe("OPTIONAL: Field to sort by (default: 'volume_24h')"),
+    sort_dir: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort direction (default: 'desc')")
+  },
+  async ({ network, page, limit, volume_24h_min, volume_24h_max, liquidity_usd_min, fdv_min, fdv_max, txns_24h_min, created_after, created_before, sort_by, sort_dir }) => {
+    try {
+      let endpoint = `/networks/${network}/tokens/filter?page=${page}&limit=${limit}&sort_by=${sort_by}&sort_dir=${sort_dir}`;
+      if (volume_24h_min !== undefined) endpoint += `&volume_24h_min=${volume_24h_min}`;
+      if (volume_24h_max !== undefined) endpoint += `&volume_24h_max=${volume_24h_max}`;
+      if (liquidity_usd_min !== undefined) endpoint += `&liquidity_usd_min=${liquidity_usd_min}`;
+      if (fdv_min !== undefined) endpoint += `&fdv_min=${fdv_min}`;
+      if (fdv_max !== undefined) endpoint += `&fdv_max=${fdv_max}`;
+      if (txns_24h_min !== undefined) endpoint += `&txns_24h_min=${txns_24h_min}`;
+      if (created_after !== undefined) endpoint += `&created_after=${created_after}`;
+      if (created_before !== undefined) endpoint += `&created_before=${created_before}`;
+      const response = await fetchFromAPI(endpoint);
+      return formatMcpResponse(response);
+    } catch (error) {
+      return formatMcpError(error);
+    }
+  }
+);
+
+// getTopTokens
+server.tool(
+  'getTopTokens',
+  'Get top tokens on a network ranked by volume, price, liquidity, or activity. Each token includes enriched metadata and multi-timeframe metrics (24h, 1h, 5m). REQUIRED: network. OPTIONAL: page, limit, order_by, sort.',
+  {
+    network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
+    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
+    limit: z.number().optional().default(50).describe("OPTIONAL: Number of items per page (default: 50, max: 100)"),
+    order_by: z.enum(['volume_24h', 'price_usd', 'liquidity_usd', 'txns', 'price_change']).optional().default('volume_24h').describe("OPTIONAL: Field to order by (default: 'volume_24h')"),
+    sort: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort direction (default: 'desc')")
+  },
+  async ({ network, page, limit, order_by, sort }) => {
+    try {
+      const endpoint = `/networks/${network}/tokens/top?page=${page}&limit=${limit}&order_by=${order_by}&sort=${sort}`;
       const response = await fetchFromAPI(endpoint);
       return formatMcpResponse(response);
     } catch (error) {
