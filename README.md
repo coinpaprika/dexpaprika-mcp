@@ -58,6 +58,10 @@ dexpaprika-mcp
 
 The server runs on port 8010 by default. You'll see `MCP server is running at http://localhost:8010` when successfully started.
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/coinpaprika-dexpaprika-mcp).
+
 ## Video Tutorial
 
 Watch our step-by-step tutorial on setting up and using the DexPaprika MCP server:
