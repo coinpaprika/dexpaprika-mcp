@@ -384,7 +384,9 @@ async function buildCapabilitiesDocument() {
           pool_address: { type: "string", required: true },
           page: { type: "number", required: false, default: 1, max: 100 },
           limit: { type: "number", required: false, default: 10, max: 100 },
-          cursor: { type: "string", required: false, description: "Transaction ID for cursor pagination" }
+          cursor: { type: "string", required: false, description: "Transaction ID for cursor pagination" },
+          from: { type: "number", required: false, description: "Filter transactions starting from this UNIX timestamp" },
+          to: { type: "number", required: false, description: "Filter transactions up to this UNIX timestamp" }
         },
         returns: { type: "object", properties: ["transactions", "page_info"] },
         cost: 1
@@ -647,6 +649,11 @@ async function buildCapabilitiesDocument() {
           description: "Using cursor for efficient pagination",
           params: { network: "polygon", pool_address: "0x...", limit: 20, cursor: "0xabcd1234..." },
           note: "Use last transaction ID as cursor for next page",
+        },
+        time_range: {
+          description: "Transactions within a specific time window (last 7 days max)",
+          params: { network: "ethereum", pool_address: "0x...", limit: 100, from: 1712700000, to: 1712800000 },
+          note: "from is inclusive, to is exclusive. Results always capped to last 7 days.",
         },
       },
       getTokenMultiPrices: {
@@ -1027,18 +1034,22 @@ server.tool(
 // getPoolTransactions
 server.tool(
   'getPoolTransactions',
-  'Get recent transactions for a pool. TIP: Use cursor for long histories (see getCapabilities). REQUIRED: network, pool_address. OPTIONAL: page, limit, cursor.',
+  'Get recent transactions for a pool. TIP: Use cursor for long histories (see getCapabilities). Use from/to for time-range filtering (UNIX timestamps, results capped to last 7 days). REQUIRED: network, pool_address. OPTIONAL: page, limit, cursor, from, to.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe("REQUIRED: Pool address or identifier"),
     page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination, up to 100 pages (default: 1, 1-indexed)"),
     limit: z.number().optional().default(10).describe("OPTIONAL: Number of items per page (default: 10, max: 100)"),
-    cursor: z.string().optional().describe("OPTIONAL: Transaction ID used for cursor-based pagination")
+    cursor: z.string().optional().describe("OPTIONAL: Transaction ID used for cursor-based pagination"),
+    from: z.number().optional().describe("OPTIONAL: Filter transactions starting from this UNIX timestamp (inclusive). Results always capped to last 7 days."),
+    to: z.number().optional().describe("OPTIONAL: Filter transactions up to this UNIX timestamp (exclusive). Must be after 'from'.")
   },
-  async ({ network, pool_address, page, limit, cursor }) => {
+  async ({ network, pool_address, page, limit, cursor, from, to }) => {
     try {
       let endpoint = `/networks/${network}/pools/${pool_address}/transactions?page=${page}&limit=${limit}`;
       if (cursor) endpoint += `&cursor=${encodeURIComponent(cursor)}`;
+      if (from !== undefined) endpoint += `&from=${from}`;
+      if (to !== undefined) endpoint += `&to=${to}`;
       const response = await fetchFromAPI(endpoint);
       return formatMcpResponse(response);
     } catch (error) {
