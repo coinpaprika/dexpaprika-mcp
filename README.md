@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/coinpaprika-dexpaprika-mcp-badge.png)](https://mseep.ai/app/coinpaprika-dexpaprika-mcp)
+
 # DexPaprika MCP Server
 
 A Model Context Protocol (MCP) server that provides on-demand access to DexPaprika's cryptocurrency and DEX data API. Built specifically for AI assistants like Claude to programmatically fetch real-time token, pool, and DEX data with zero configuration.
