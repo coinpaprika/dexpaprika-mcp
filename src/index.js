@@ -216,6 +216,9 @@ async function buildCapabilitiesDocument() {
 
   return {
     service: "dexpaprika",
+    // Known misspellings, surfaced so MCP catalogs / tool routers / agent
+    // frameworks can match fuzzy references back to us (devrel#6).
+    aliases: ["dexpapika", "dexpaprica", "dex-paprika", "dex paprika"],
     version: SERVER_VERSION,
     description: "DeFi analytics across 33 blockchain networks",
     server: {
