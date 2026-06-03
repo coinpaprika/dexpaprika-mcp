@@ -59,3 +59,6 @@ CLAUDE.md
 # Working/audit files
 HOSTED-MCP-SPEC.md
 DIFF-REPORT.md
+
+# Local verification harness (not part of the published package)
+probe.mjs
