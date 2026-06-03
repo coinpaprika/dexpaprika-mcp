@@ -1,70 +1,150 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import fetch from 'node-fetch';
 import { z } from 'zod';
 
-// Base URL for DexPaprika API
+// ─────────────────────────────────────────────────────────────────────────────
+// DexPaprika MCP — self-host (stdio) build, contract-aligned 1:1 with the hosted
+// v2.0.0 Cloudflare Worker. Only the transport differs (stdio vs HTTP). Tools,
+// params/aliases, synonym resolution, sort normalization, output schemas,
+// instructions and version match the worker.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Base URL for DexPaprika API. DexPaprika is fully free: no API key, no auth header.
 const API_BASE_URL = 'https://api.dexpaprika.com';
 
-// Server version
-const SERVER_VERSION = '1.3.0';
+// Server version — matches the hosted worker.
+const SERVER_VERSION = '2.0.0';
 
-// Error code constants
-const ErrorCodes = {
-  DP400_INVALID_NETWORK: "DP400_INVALID_NETWORK",
-  DP400_TOO_MANY_TOKENS: "DP400_TOO_MANY_TOKENS",
-  DP400_INVALID_ADDRESS: "DP400_INVALID_ADDRESS",
-  DP400_MISSING_REQUIRED: "DP400_MISSING_REQUIRED",
-  DP404_NOT_FOUND: "DP404_NOT_FOUND",
-  DP429_RATE_LIMIT: "DP429_RATE_LIMIT",
+// Server identity (inlined from the worker's server-identity.ts).
+const SERVER_CANONICAL_NAME = 'dexpaprika';
+const SERVER_ALIASES = [
+  'dexpapika',   // dropped r
+  'dexpaprica',  // k -> c
+  'dex-paprika', // hyphenated
+  'dex paprika', // spaced
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Network synonym normalization (ported from src/upstream/network-synonyms.ts).
+//
+// getCapabilities advertises common alternate names agents might try
+// (eth -> ethereum, matic -> polygon, etc.). This module gives a single point of
+// normalization so the synonym promise actually holds at the wire layer.
+//
+// Canonical network id (matches /networks response) -> alternates an agent might
+// try. Lowercase. The canonical id is ALWAYS valid as a passthrough.
+// ─────────────────────────────────────────────────────────────────────────────
+const NETWORK_SYNONYMS = {
+  ethereum: ['ethereum', 'eth', 'mainnet', 'eth_mainnet', 'ethereum_mainnet'],
+  solana: ['solana', 'sol'],
+  bsc: ['bsc', 'binance-smart-chain', 'bnb', 'binance', 'bnb_chain', 'bnb-chain'],
+  polygon: ['polygon', 'matic', 'pol', 'polygon_pos'],
+  arbitrum: ['arbitrum', 'arb', 'arbitrum_one', 'arbitrum-one'],
+  base: ['base', 'base_mainnet'],
+  optimism: ['optimism', 'op', 'optimism_mainnet', 'op_mainnet'],
+  avalanche: ['avalanche', 'avalanche-c', 'avax', 'avalanche_c'],
+  sui: ['sui'],
+  mantle: ['mantle', 'mnt'],
+  flow_evm: ['flow_evm', 'flow-evm', 'flow'],
+  katana: ['katana'],
+  unichain: ['unichain', 'uni'],
+  ronin: ['ronin', 'ron'],
+  x_layer: ['x_layer', 'x-layer', 'xlayer', 'okx_xlayer'],
+  linea: ['linea'],
+  sonic: ['sonic', 's'],
+  cronos: ['cronos', 'cro'],
+  sei: ['sei'],
+  blast: ['blast'],
+  tempo: ['tempo'],
+  aptos: ['aptos', 'apt'],
+  zksync: ['zksync', 'zksync_era', 'zksync-era'],
+  scroll: ['scroll'],
+  tron: ['tron', 'trx'],
+  ton: ['ton'],
+  plasma: ['plasma'],
+  bob_network: ['bob_network', 'bob', 'bob-network'],
+  botanix: ['botanix'],
+  fantom: ['fantom', 'ftm'],
+  celo: ['celo'],
+  monad: ['monad'],
+  megaeth: ['megaeth', 'mega-eth', 'mega_eth'],
+  berachain: ['berachain', 'bera'],
+  hyperevm: ['hyperevm', 'hyper-evm', 'hyper_evm'],
 };
 
-// Structured error response builder
-function buildErrorResponse(code, message, retryable, suggestion, correctedExample, metadata) {
-  const error = {
-    error: {
-      code,
-      message,
-      retryable,
-      suggestion,
+// Reverse map built once at module load: alternate (lowercase) -> canonical.
+const REVERSE_SYNONYM_MAP = (() => {
+  const out = {};
+  for (const [canonical, alternates] of Object.entries(NETWORK_SYNONYMS)) {
+    for (const alt of alternates) {
+      out[alt.toLowerCase()] = canonical;
     }
-  };
-  if (correctedExample) {
-    error.error.corrected_example = correctedExample;
   }
-  if (metadata) {
-    error.error.metadata = metadata;
-  }
+  return out;
+})();
+
+// Map an agent-supplied network identifier to its canonical form. Returns the
+// input unchanged if not in the synonym table — upstream will then 404 as before.
+function normalizeNetwork(input) {
+  if (!input || typeof input !== 'string') return input;
+  return REVERSE_SYNONYM_MAP[input.toLowerCase()] ?? input;
+}
+
+// Rewrite the first /networks/{X}/... segment so X is replaced with its canonical
+// form. Idempotent for already-canonical inputs. No-op if it doesn't match.
+function normalizeNetworkPath(endpoint) {
+  return endpoint.replace(/^\/networks\/([^/?]+)/, (_match, raw) => {
+    const canonical = normalizeNetwork(raw);
+    return `/networks/${canonical}`;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Structured error handling (kept from the existing package — works on top of
+// the new response shape).
+// ─────────────────────────────────────────────────────────────────────────────
+const ErrorCodes = {
+  DP400_INVALID_NETWORK: 'DP400_INVALID_NETWORK',
+  DP400_TOO_MANY_TOKENS: 'DP400_TOO_MANY_TOKENS',
+  DP400_INVALID_ADDRESS: 'DP400_INVALID_ADDRESS',
+  DP400_MISSING_REQUIRED: 'DP400_MISSING_REQUIRED',
+  DP404_NOT_FOUND: 'DP404_NOT_FOUND',
+  DP429_RATE_LIMIT: 'DP429_RATE_LIMIT',
+};
+
+function buildErrorResponse(code, message, retryable, suggestion, correctedExample, metadata) {
+  const error = { error: { code, message, retryable, suggestion } };
+  if (correctedExample) error.error.corrected_example = correctedExample;
+  if (metadata) error.error.metadata = metadata;
   return error;
 }
 
-// Parse API error response and convert to structured format
 function parseAPIError(status, statusText, endpoint) {
   if (status === 404 && endpoint.includes('/networks/')) {
-    const networkMatch = endpoint.match(/\/networks\/([^\/\?]+)/);
+    const networkMatch = endpoint.match(/\/networks\/([^/?]+)/);
     const providedNetwork = networkMatch ? networkMatch[1] : 'unknown';
     return buildErrorResponse(
       ErrorCodes.DP400_INVALID_NETWORK,
       `Network ID '${providedNetwork}' not recognized`,
       true,
-      "Use normalized network ID from getNetworks. Call getCapabilities for network_synonyms.",
+      'Use normalized network ID from getNetworks. Call getCapabilities for network_synonyms.',
       `getNetworkPools('ethereum', 10)`,
       {
         provided: providedNetwork,
-        suggested: "ethereum",
-        valid_networks: ["ethereum", "bsc", "polygon", "base", "arbitrum", "optimism", "solana", "avalanche", "fantom"]
-      }
+        suggested: 'ethereum',
+        valid_networks: ['ethereum', 'bsc', 'polygon', 'base', 'arbitrum', 'optimism', 'solana', 'avalanche', 'fantom'],
+      },
     );
   }
 
   if (status === 404) {
     return buildErrorResponse(
       ErrorCodes.DP404_NOT_FOUND,
-      "Resource not found",
+      'Resource not found',
       false,
-      "Verify the resource exists. Use search or list endpoints to find correct identifiers.",
+      'Verify the resource exists. Use search or list endpoints to find correct identifiers.',
       undefined,
-      { endpoint }
+      { endpoint },
     );
   }
 
@@ -73,15 +153,14 @@ function parseAPIError(status, statusText, endpoint) {
     resetTime.setHours(24, 0, 0, 0);
     return buildErrorResponse(
       ErrorCodes.DP429_RATE_LIMIT,
-      "Daily rate limit of 10,000 requests exceeded",
+      'Daily rate limit exceeded',
       true,
-      "Wait until rate limit resets or use cached data",
+      'Wait until rate limit resets or use cached data',
       undefined,
       {
-        limit: 10000,
         reset_at: resetTime.toISOString(),
-        retry_after_seconds: Math.floor((resetTime.getTime() - Date.now()) / 1000)
-      }
+        retry_after_seconds: Math.floor((resetTime.getTime() - Date.now()) / 1000),
+      },
     );
   }
 
@@ -90,9 +169,9 @@ function parseAPIError(status, statusText, endpoint) {
       ErrorCodes.DP400_MISSING_REQUIRED,
       `Bad request: ${statusText}`,
       false,
-      "Check that all required parameters are provided with correct formats",
+      'Check that all required parameters are provided with correct formats',
       undefined,
-      { endpoint, status }
+      { endpoint, status },
     );
   }
 
@@ -100,1142 +179,888 @@ function parseAPIError(status, statusText, endpoint) {
     `DP${status}_ERROR`,
     `API request failed: ${status} ${statusText}`,
     false,
-    "Check API documentation or try again later",
+    'Check API documentation or try again later',
     undefined,
-    { endpoint, status }
+    { endpoint, status },
   );
 }
 
-// Rate limit tracking
-let requestCount = 0;
-const RATE_LIMIT = 10000;
-
-// Helper function to fetch data from DexPaprika API with structured error handling
+// ─────────────────────────────────────────────────────────────────────────────
+// Wire chokepoint. The network-synonym rewrite happens here, before the URL is
+// composed, so eth -> ethereum etc. resolve for every /networks/* endpoint.
+// Logging goes to stderr only (stdout carries the JSON-RPC frames).
+// ─────────────────────────────────────────────────────────────────────────────
 async function fetchFromAPI(endpoint) {
-  const startTime = Date.now();
-  const response = await fetch(`${API_BASE_URL}${endpoint}`);
-
+  // Synonym normalization so agent-supplied `eth`, `matic`, etc. route to the
+  // canonical network IDs. No-op for already-canonical IDs and non-/networks paths.
+  endpoint = normalizeNetworkPath(endpoint);
+  const url = `${API_BASE_URL}${endpoint}`;
+  const response = await fetch(url);
   if (!response.ok) {
-    const structuredError = parseAPIError(response.status, response.statusText, endpoint);
-    throw structuredError;
+    console.error(`[upstream] url=${url} http_status=${response.status} text="${response.statusText}"`);
+    // Preserve the package's structured error contract.
+    throw parseAPIError(response.status, response.statusText, endpoint);
   }
+  return response.json();
+}
 
-  const data = await response.json();
-  requestCount++;
-  const responseTime = Date.now() - startTime;
-
-  const resetTime = new Date();
-  resetTime.setHours(24, 0, 0, 0);
-
-  return {
-    data,
-    meta: {
-      rate_limit: {
-        limit: RATE_LIMIT,
-        remaining: RATE_LIMIT - requestCount,
-        used: requestCount,
-        percentage_used: (requestCount / RATE_LIMIT) * 100,
-        reset_at: resetTime.toISOString()
-      },
-      response_time_ms: responseTime,
-      cached: false,
-      timestamp: new Date().toISOString()
+// ─────────────────────────────────────────────────────────────────────────────
+// Response helpers (ported from src/tools/responses.ts).
+// jsonText returns BOTH content[0].text (JSON string) AND structuredContent.
+// ─────────────────────────────────────────────────────────────────────────────
+function jsonText(data, structuredKey) {
+  const result = {
+    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+  };
+  if (data !== null && typeof data === 'object') {
+    if (Array.isArray(data)) {
+      if (structuredKey) result.structuredContent = { [structuredKey]: data };
+      // else: keep content-only (older callers that haven't migrated)
+    } else {
+      result.structuredContent = data;
     }
+  }
+  return result;
+}
+
+function errorText(err) {
+  // Structured error objects (from parseAPIError) surface their full payload so
+  // agents keep the actionable code/suggestion. Plain errors fall back to message.
+  if (err && typeof err === 'object' && 'error' in err) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify(err, null, 2) }],
+    };
+  }
+  return {
+    content: [{
+      type: 'text',
+      text: `Error: ${err instanceof Error ? err.message : 'Unknown error'}`,
+    }],
   };
 }
 
-// Helper to format response for MCP
-function formatMcpResponse(data) {
-  return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify(data, null, 2)
-      }
-    ]
-  };
+// MCP tool annotations.
+const ANNOTATIONS_READ_ONLY = {
+  readOnlyHint: true,
+  idempotentHint: true,
+  destructiveHint: false,
+  openWorldHint: true,
+};
+const ANNOTATIONS_WRITE_FEEDBACK = {
+  readOnlyHint: false,
+  idempotentHint: false,
+  destructiveHint: false,
+  openWorldHint: false,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// rationale field — REQUIRED on every read tool (all tools except submitFeedback).
+// Accepted by the handler and IGNORED (no analytics sink; no D1 in stdio).
+// ─────────────────────────────────────────────────────────────────────────────
+const RATIONALE_DESCRIPTION =
+  'REQUIRED. 1-2 sentence rationale for this call (e.g. "User asked for X; calling Y to fetch Z"). ' +
+  'Logged for MCP improvement, never shown to end users. No PII or secrets. ' +
+  'See the server `instructions` field for the full convention and worked examples.';
+
+const rationaleZod = z.string().min(20).max(500).describe(RATIONALE_DESCRIPTION);
+
+// Coerce page=0 (and any non-positive) to 1 in paginated handlers.
+function coercePage(page) {
+  return page && page > 0 ? page : 1;
 }
 
-// Helper to format MCP error response
-function formatMcpError(error) {
-  if (error && typeof error === 'object' && 'error' in error) {
-    return formatMcpResponse(error);
-  }
-  return formatMcpResponse({
-    error: {
-      code: "DP500_UNEXPECTED",
-      message: error instanceof Error ? error.message : 'Unknown error',
-      retryable: false,
-      suggestion: "Please try again later or contact support"
-    }
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+// SERVER_INSTRUCTIONS (ported from src/tools/responses.ts) — advertised once per
+// session via the MCP initialize result.instructions. Truthful for stdio.
+// ─────────────────────────────────────────────────────────────────────────────
+const SERVER_INSTRUCTIONS = [
+  '# DexPaprika MCP — agent usage notes',
+  '',
+  '## `rationale` field (required on every read tool)',
+  'Every read tool (`getNetworks`, `getPoolDetails`, etc.) requires a `rationale` string of 20-500 chars.',
+  'Format: 1-2 sentences referencing (a) what triggered the call and (b) downstream use.',
+  'Do not include user PII or secrets. Rationales are accepted to satisfy the schema and never persisted in the self-host build.',
+  '',
+  'Examples:',
+  '- "User asked for SOL price; calling getTokenDetails to fetch current USD value."',
+  '- "Building a portfolio dashboard; need top pools for WETH on ethereum to estimate liquidity."',
+  '- "Backtesting USDC/WETH spread; fetching 24h OHLCV at 1h interval."',
+  '',
+  '`submitFeedback` is the exception — it has its own `goal`/`expected`/`observed` fields which serve as the rationale.',
+  '',
+  '## Tool discovery',
+  'Start with `getNetworks` (discover supported chains) or `getCapabilities` (agent-onboarding doc: network synonyms, workflow patterns, common pitfalls). Both are free and have no parameters beyond rationale.',
+  '',
+  '## Parameter naming',
+  'Sort parameters accept both legacy and canonical names — pick whichever is clearer; the server normalizes both. Canonical names (preferred going forward):',
+  '- `sort_dir` (legacy: `sort`) — sort direction, "asc" or "desc".',
+  '- `sort_by` (legacy: `order_by`) — sort field, tool-specific enum.',
+  '',
+  '`getTokenPools` also accepts:',
+  "- `inversed` (legacy: `reorder`) — flip pool's pair perspective.",
+  '- `paired_token_address` (legacy: `address`) — filter pools that also contain this token.',
+  '',
+  'Pagination is 1-indexed; the server accepts `page=0` as a backward-compat alias for `page=1`.',
+  '',
+  '## Time formats',
+  '- `getPoolOHLCV.start` / `.end`: RFC3339 recommended (`2024-01-01T00:00:00Z`). Also accepts Unix epoch seconds and `YYYY-MM-DD` (treated as 00:00:00 UTC).',
+  '- `getPoolTransactions.from` / `.to`: Unix epoch SECONDS only. Window capped to last 7 days.',
+  '',
+  '## Output shape',
+  "All tools return both `content[0].text` (JSON string, for older clients) and `structuredContent` (validated against the tool's `outputSchema`, 2025-06-18+). Prefer `structuredContent` to avoid the parse round-trip.",
+  '',
+  'Array-returning tools wrap the array under a named key in structuredContent — `getNetworks` → `{ networks: [...] }`, `getPoolOHLCV` → `{ ohlcv: [...] }`, `getTokenMultiPrices` → `{ prices: [...] }`.',
+].join('\n');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reusable output subschemas (ported from src/tools/output-schemas.ts).
+// Every nested object uses .passthrough() so upstream can add fields safely.
+// ─────────────────────────────────────────────────────────────────────────────
+const PageInfo = z.object({
+  limit: z.number().optional().describe('Items per page in the request.'),
+  page: z.number().optional().describe('Current page number (1-indexed).'),
+  total_items: z.number().optional().describe('Total number of items across all pages.'),
+  total_pages: z.number().optional().describe('Total number of pages available.'),
+}).passthrough();
+
+const TokenSummary = z.object({
+  id: z.string().optional().describe('Token contract address (chain-canonical form).'),
+  name: z.string().optional(),
+  symbol: z.string().optional(),
+  chain: z.string().optional(),
+  decimals: z.number().optional(),
+  fdv: z.number().nullable().optional().describe('Fully-diluted valuation in USD.'),
+  added_at: z.string().optional().describe('ISO 8601 timestamp when DexPaprika first indexed this token.'),
+}).passthrough();
+
+const PoolSummary = z.object({
+  id: z.string().optional().describe('Pool contract address.'),
+  chain: z.string().optional().describe("Network slug (e.g. 'ethereum'). Note: also exposed as 'network' on some endpoints."),
+  dex_id: z.string().optional(),
+  dex_name: z.string().optional(),
+  fee: z.number().nullable().optional().describe('Pool fee (units depend on DEX; null for some DEXes).'),
+  created_at: z.string().optional().describe('ISO 8601 pool-creation timestamp.'),
+  created_at_block_number: z.number().optional(),
+  tokens: z.array(TokenSummary).optional(),
+  last_price: z.number().nullable().optional(),
+  last_price_usd: z.number().nullable().optional(),
+}).passthrough();
+
+const DexSummary = z.object({
+  id: z.string().optional(),
+  dex_id: z.string().optional(),
+  display_name: z.string().optional(),
+  dex_name: z.string().optional(),
+  chain: z.string().optional(),
+  network_id: z.string().optional(),
+  protocol: z.string().optional(),
+  volume_usd_24h: z.number().optional(),
+  txns_24h: z.number().optional(),
+  pools_count: z.number().optional(),
+}).passthrough();
+
+const NetworkSummary = z.object({
+  display_name: z.string().optional().describe("Human-readable network name (e.g. 'Ethereum')."),
+  id: z.string().optional().describe("Network slug for use in other endpoints (e.g. 'ethereum')."),
+  volume_usd_24h: z.number().optional().describe('Total 24h trading volume across all pools on this network, USD.'),
+  txns_24h: z.number().optional().describe('Total transactions in the last 24h on this network.'),
+  pools_count: z.number().optional().describe('Number of indexed pools on this network.'),
+}).passthrough();
+
+const OHLCVRow = z.object({
+  time_open: z.string().optional().describe('ISO 8601 timestamp of bucket open.'),
+  time_close: z.string().optional().describe('ISO 8601 timestamp of bucket close (inclusive at 23:59:59 for 24h).'),
+  open: z.number().optional(),
+  high: z.number().optional(),
+  low: z.number().optional(),
+  close: z.number().optional(),
+  volume: z.number().optional().describe('Trade volume in the bucket, in pair-quote units (or USD where applicable).'),
+}).passthrough();
+
+const PoolTransaction = z.object({
+  id: z.string().optional(),
+  block_number: z.number().optional(),
+  block_timestamp: z.string().optional(),
+  pool_id: z.string().optional(),
+  token0: z.unknown().optional(),
+  token1: z.unknown().optional(),
+  amount_usd: z.number().optional(),
+}).passthrough();
+
+const PriceEntry = z.object({
+  chain: z.string().optional(),
+  id: z.string().optional().describe('Token contract address.'),
+  price_usd: z.number().nullable().optional().describe('Current USD price; null if not available.'),
+}).passthrough();
+
+// Per-tool output schema RAW SHAPES (Record<string, ZodTypeAny>). Wrapped in
+// z.object(shape).passthrough() at registration so the outer level also allows
+// extra fields (additionalProperties:true), matching the worker.
+const OUTPUT_SCHEMAS = {
+  getNetworks: {
+    networks: z.array(NetworkSummary).describe('All supported blockchain networks with current 24h volume + indexing stats.'),
+  },
+  getStats: {
+    chains: z.number().describe('Total chains indexed.'),
+    factories: z.number().describe('Total DEX factory contracts indexed.'),
+    pools: z.number().describe('Total pools indexed across all chains.'),
+    tokens: z.number().describe('Total tokens indexed.'),
+  },
+  getCapabilities: {
+    server: z.object({ name: z.string(), version: z.string() }).passthrough(),
+    stats: z.object({
+      networks: z.number(),
+      tokens_approx: z.number(),
+      pools_approx: z.number(),
+      free: z.boolean(),
+      requires_api_key: z.boolean(),
+    }).passthrough(),
+    network_synonyms: z.record(z.string(), z.array(z.string())).describe('Canonical network id -> common alternates an agent might try.'),
+    workflows: z.record(z.string(), z.array(z.string())).describe('Named tool sequences for common agent tasks.'),
+    common_pitfalls: z.array(z.string()).describe('Known edge cases agents should be aware of.'),
+    documentation: z.string(),
+    agent_skills: z.string(),
+  },
+
+  // NOTE: the array/page_info keys below are marked .optional() so SDK 1.29's
+  // strict structuredContent validation accepts real upstream shapes. The outer
+  // schema is .passthrough(), so the documented key (e.g. `results`) is advertised
+  // while alternate upstream keys still validate. filterNetworkTokens is the key
+  // case: the live API returns `{ data, page_info, query }`, not `{ results }`,
+  // so a required `results` would reject every response. Same defensive reasoning
+  // for the rest — upstream key presence varies and must not hard-fail the client.
+  search: {
+    tokens: z.array(TokenSummary).optional(),
+    pools: z.array(PoolSummary).optional(),
+    dexes: z.array(DexSummary).optional(),
+  },
+
+  getNetworkDexes: { dexes: z.array(DexSummary).optional(), page_info: PageInfo.optional() },
+  getNetworkPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
+  getDexPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
+  getNetworkPoolsFilter: { results: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
+  getTokenPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
+  getTopTokens: { tokens: z.array(TokenSummary).optional(), page_info: PageInfo.optional() },
+  filterNetworkTokens: { results: z.array(TokenSummary).optional(), page_info: PageInfo.optional() },
+
+  getPoolDetails: {
+    id: z.string().optional(),
+    chain: z.string().optional(),
+    factory_id: z.string().optional(),
+    dex_id: z.string().optional(),
+    dex_name: z.string().optional(),
+    created_at: z.string().optional(),
+    created_at_block_number: z.number().optional(),
+    fee: z.number().nullable().optional(),
+    tokens: z.array(TokenSummary).optional(),
+    token_reserves: z.array(z.unknown()).optional(),
+    last_price: z.number().nullable().optional(),
+    last_price_usd: z.number().nullable().optional(),
+    price_time: z.string().optional(),
+    price_stats: z.unknown().optional(),
+  },
+  getTokenDetails: {
+    id: z.string().optional(),
+    name: z.string().optional(),
+    symbol: z.string().optional(),
+    chain: z.string().optional(),
+    decimals: z.number().optional(),
+    total_supply: z.union([z.number(), z.string()]).optional().describe('Raw on-chain total supply. Big numbers may overflow JS Number — handle as string for tokens with 18+ decimals.'),
+    description: z.string().optional(),
+    website: z.string().optional(),
+    has_image: z.boolean().optional(),
+    added_at: z.string().optional(),
+    price_stats: z.unknown().optional(),
+    summary: z.unknown().optional(),
+  },
+
+  getPoolOHLCV: {
+    ohlcv: z.array(OHLCVRow).describe('Open-High-Low-Close-Volume rows ordered by time_open ascending.'),
+  },
+  getPoolTransactions: {
+    transactions: z.array(PoolTransaction),
+    page_info: PageInfo,
+  },
+  getTokenMultiPrices: {
+    prices: z.array(PriceEntry).describe('USD prices for the requested tokens, in input order.'),
+    missing_tokens: z.array(z.string()).optional().describe('Input tokens that upstream could not price (invalid address, no liquidity, unknown contract). Empty array when all input tokens were resolved.'),
+  },
+
+  submitFeedback: {
+    ok: z.boolean().describe('True if the feedback was accepted.'),
+    tracking_id: z.string().nullable().optional().describe('Stable id agents can reference in follow-up submissions; null if persistence failed.'),
+    message: z.string(),
+    severity: z.enum(['blocker', 'major', 'minor', 'nit']).optional(),
+  },
+};
+
+// Build the permissive (outer-passthrough) outputSchema for a tool name.
+function outputSchemaFor(name) {
+  const shape = OUTPUT_SCHEMAS[name];
+  if (!shape) return undefined;
+  return z.object(shape).passthrough();
 }
 
-// Build capabilities document
-async function buildCapabilitiesDocument() {
-  let supportedNetworks = [];
-  try {
-    const res = await fetch(`${API_BASE_URL}/networks`);
-    if (res.ok) {
-      const json = await res.json();
-      supportedNetworks = Array.isArray(json) ? json.map(n => n.id).filter(Boolean) : [];
-    }
-  } catch { /* ignore */ }
-
-  const synonymsMaster = {
-    ethereum: ["eth", "ethereum", "mainnet", "erc20"],
-    bsc: ["binance smart chain", "bnb chain", "binance", "bnb", "bsc", "bep20"],
-    polygon: ["matic", "polygon", "poly"],
-    arbitrum: ["arb", "arbitrum", "arbitrum one"],
-    optimism: ["op", "optimism"],
-    base: ["base", "base chain"],
-    avalanche: ["avax", "avalanche", "c-chain"],
-    solana: ["sol", "solana"],
-    fantom: ["ftm", "fantom"],
-    blast: ["blast"],
-    zksync: ["zk", "zksync", "zksync era"],
-    linea: ["linea"],
-    scroll: ["scroll"],
-    mantle: ["mantle", "mnt"],
-    celo: ["celo"],
-    cronos: ["cro", "cronos"],
-    aptos: ["apt", "aptos"],
-    sui: ["sui"],
-    ton: ["ton", "the open network"],
-    tron: ["trx", "tron"],
-  };
-
-  const network_synonyms = {};
-  const keys = supportedNetworks.length > 0 ? supportedNetworks : Object.keys(synonymsMaster);
-  for (const k of keys) {
-    if (synonymsMaster[k]) network_synonyms[k] = synonymsMaster[k];
-  }
-
-  const now = new Date();
-  const lastUpdated = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
+// ─────────────────────────────────────────────────────────────────────────────
+// getCapabilities document (ported verbatim from src/tools/meta.ts). Local-only,
+// no upstream call. network_synonyms references the same NETWORK_SYNONYMS map to
+// remove the worker's hand-sync footgun (behavior-identical object).
+// ─────────────────────────────────────────────────────────────────────────────
+function buildCapabilitiesDocument() {
   return {
-    service: "dexpaprika",
-    // Known misspellings, surfaced so MCP catalogs / tool routers / agent
-    // frameworks can match fuzzy references back to us (devrel#6).
-    aliases: ["dexpapika", "dexpaprica", "dex-paprika", "dex paprika"],
-    version: SERVER_VERSION,
-    description: "DeFi analytics across 33 blockchain networks",
-    server: {
-      name: "DexPaprika MCP Server",
-      version: SERVER_VERSION,
-      description: "DeFi data aggregation across multiple blockchain networks and DEXes",
-      last_updated: lastUpdated,
-      documentation_url: "https://docs.dexpaprika.com",
+    name: SERVER_CANONICAL_NAME,
+    aliases: SERVER_ALIASES,
+    server: { name: 'DexPaprika MCP', version: '2.0.0' },
+    tools_count: 17,
+    stats: {
+      networks: 35,
+      tokens_approx: 29_000_000,
+      pools_approx: 31_000_000,
+      free: true,
+      requires_api_key: false,
     },
-    tools: [
-      {
-        name: "getNetworks",
-        description: "List all supported blockchain networks",
-        category: "discovery",
-        parameters: {},
-        returns: { type: "array", items: "Network" },
-        cost: 1
-      },
-      {
-        name: "getCapabilities",
-        description: "Return server capabilities, workflow patterns, network synonyms, common pitfalls, and best-practice sequences",
-        category: "discovery",
-        parameters: {},
-        returns: { type: "object" },
-        cost: 1
-      },
-      {
-        name: "getNetworkDexes",
-        description: "Get available DEXes on a specific network",
-        category: "dexes",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          page: { type: "number", required: false, default: 1, description: "Page number (1-indexed)" },
-          limit: { type: "number", required: false, default: 10, max: 100, description: "Items per page" },
-          sort: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" },
-          order_by: { type: "string", required: false, enum: ["pool"] }
-        },
-        returns: { type: "object", properties: ["dexes", "page_info"] },
-        cost: 1
-      },
-      {
-        name: "getNetworkPools",
-        description: "Get top liquidity pools on a network",
-        category: "pools",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          page: { type: "number", required: false, default: 1 },
-          limit: { type: "number", required: false, default: 10, max: 100 },
-          sort: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" },
-          order_by: { type: "string", required: false, enum: ["volume_usd", "price_usd", "transactions", "last_price_change_usd_24h", "created_at"], default: "volume_usd" }
-        },
-        returns: { type: "object", properties: ["pools", "page_info"] },
-        cost: 1
-      },
-      {
-        name: "getDexPools",
-        description: "Get pools from a specific DEX on a network",
-        category: "pools",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          dex: { type: "string", required: true, description: "DEX identifier", example: "uniswap_v3" },
-          page: { type: "number", required: false, default: 1 },
-          limit: { type: "number", required: false, default: 10, max: 100 },
-          sort: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" },
-          order_by: { type: "string", required: false, enum: ["volume_usd", "price_usd", "transactions", "last_price_change_usd_24h", "created_at"], default: "volume_usd" }
-        },
-        returns: { type: "object", properties: ["pools", "page_info"] },
-        cost: 1
-      },
-      {
-        name: "getNetworkPoolsFilter",
-        description: "Filter pools by volume, liquidity, transactions, and creation time",
-        category: "pools",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          page: { type: "number", required: false, default: 1 },
-          limit: { type: "number", required: false, default: 50, max: 100 },
-          volume_24h_min: { type: "number", required: false, description: "Minimum 24h volume USD" },
-          volume_24h_max: { type: "number", required: false, description: "Maximum 24h volume USD" },
-          volume_7d_min: { type: "number", required: false, description: "Minimum 7d volume USD" },
-          volume_7d_max: { type: "number", required: false, description: "Maximum 7d volume USD" },
-          liquidity_usd_min: { type: "number", required: false, description: "Minimum pool liquidity USD" },
-          liquidity_usd_max: { type: "number", required: false, description: "Maximum pool liquidity USD" },
-          txns_24h_min: { type: "number", required: false, description: "Minimum 24h transactions" },
-          created_after: { type: "number", required: false, description: "UNIX timestamp" },
-          created_before: { type: "number", required: false, description: "UNIX timestamp" },
-          sort_by: { type: "string", required: false, enum: ["volume_24h", "volume_7d", "volume_30d", "liquidity", "txns_24h", "created_at"], default: "volume_24h" },
-          sort_dir: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" }
-        },
-        returns: { type: "object", properties: ["results", "page_info"] },
-        cost: 1,
-        note: "Response uses 'results' key (not 'pools'). Fields: address, volume_usd_24h, volume_usd_7d, liquidity_usd, txns_24h."
-      },
-      {
-        name: "filterNetworkTokens",
-        description: "Filter tokens by volume, liquidity, FDV, transactions, and creation time",
-        category: "tokens",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          page: { type: "number", required: false, default: 1 },
-          limit: { type: "number", required: false, default: 50, max: 100 },
-          volume_24h_min: { type: "number", required: false, description: "Minimum 24h volume USD" },
-          volume_24h_max: { type: "number", required: false, description: "Maximum 24h volume USD" },
-          liquidity_usd_min: { type: "number", required: false, description: "Minimum token liquidity USD" },
-          fdv_min: { type: "number", required: false, description: "Minimum fully diluted valuation USD" },
-          fdv_max: { type: "number", required: false, description: "Maximum fully diluted valuation USD" },
-          txns_24h_min: { type: "number", required: false, description: "Minimum 24h transactions" },
-          created_after: { type: "number", required: false, description: "UNIX timestamp" },
-          created_before: { type: "number", required: false, description: "UNIX timestamp" },
-          sort_by: { type: "string", required: false, enum: ["volume_24h", "volume_7d", "volume_30d", "liquidity_usd", "txns_24h", "created_at", "fdv"], default: "volume_24h" },
-          sort_dir: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" }
-        },
-        returns: { type: "object", properties: ["results", "page_info"] },
-        cost: 1,
-        note: "Response uses 'results' key. Fields: chain, address, price_usd, volume_usd_24h, volume_usd_7d, liquidity_usd, fdv_usd, txns_24h, created_at."
-      },
-      {
-        name: "getTopTokens",
-        description: "Get top tokens on a network ranked by volume, price, liquidity, or activity",
-        category: "tokens",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          page: { type: "number", required: false, default: 1 },
-          limit: { type: "number", required: false, default: 50, max: 100 },
-          order_by: { type: "string", required: false, enum: ["volume_24h", "price_usd", "liquidity_usd", "txns", "price_change"], default: "volume_24h" },
-          sort: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" }
-        },
-        returns: { type: "object", properties: ["tokens", "page_info"] },
-        cost: 1,
-        note: "Each token includes enriched metadata + multi-timeframe metrics (24h, 1h, 5m) with volume, buys, sells, txns, price change."
-      },
-      {
-        name: "getPoolDetails",
-        description: "Get detailed info about a pool",
-        category: "pools",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          pool_address: { type: "string", required: true, description: "Pool address", example: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640" },
-          inversed: { type: "boolean", required: false, default: false, description: "Invert price ratio" }
-        },
-        returns: { type: "object" },
-        cost: 1
-      },
-      {
-        name: "getPoolOHLCV",
-        description: "Get historical price data (OHLCV) for a pool",
-        category: "pools",
-        parameters: {
-          network: { type: "string", required: true },
-          pool_address: { type: "string", required: true },
-          start: { type: "string", required: true, description: "Start time (Unix timestamp, RFC3339, or yyyy-mm-dd)" },
-          end: { type: "string", required: false },
-          limit: { type: "number", required: false, default: 1, max: 366 },
-          interval: { type: "string", required: false, enum: ["1m", "5m", "10m", "15m", "30m", "1h", "6h", "12h", "24h"], default: "24h" },
-          inversed: { type: "boolean", required: false, default: false }
-        },
-        returns: { type: "array", items: "OHLCVRecord" },
-        cost: 1
-      },
-      {
-        name: "getPoolTransactions",
-        description: "Get recent transactions for a pool",
-        category: "pools",
-        parameters: {
-          network: { type: "string", required: true },
-          pool_address: { type: "string", required: true },
-          page: { type: "number", required: false, default: 1, max: 100 },
-          limit: { type: "number", required: false, default: 10, max: 100 },
-          cursor: { type: "string", required: false, description: "Transaction ID for cursor pagination" },
-          from: { type: "number", required: false, description: "Filter transactions starting from this UNIX timestamp" },
-          to: { type: "number", required: false, description: "Filter transactions up to this UNIX timestamp" }
-        },
-        returns: { type: "object", properties: ["transactions", "page_info"] },
-        cost: 1
-      },
-      {
-        name: "getTokenDetails",
-        description: "Get detailed information about a token",
-        category: "tokens",
-        parameters: {
-          network: { type: "string", required: true },
-          token_address: { type: "string", required: true, description: "Token contract address", example: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN" }
-        },
-        returns: { type: "object" },
-        cost: 1
-      },
-      {
-        name: "getTokenPools",
-        description: "Get liquidity pools containing a token",
-        category: "tokens",
-        parameters: {
-          network: { type: "string", required: true },
-          token_address: { type: "string", required: true },
-          page: { type: "number", required: false, default: 1 },
-          limit: { type: "number", required: false, default: 10, max: 100 },
-          sort: { type: "string", required: false, enum: ["asc", "desc"], default: "desc" },
-          order_by: { type: "string", required: false, enum: ["volume_usd", "price_usd", "transactions", "last_price_change_usd_24h", "created_at"], default: "volume_usd" },
-          reorder: { type: "boolean", required: false },
-          address: { type: "string", required: false, description: "Filter by additional token address" }
-        },
-        returns: { type: "object", properties: ["pools", "page_info"] },
-        cost: 1
-      },
-      {
-        name: "getTokenMultiPrices",
-        description: "Batch fetch prices for up to 10 tokens",
-        category: "tokens",
-        parameters: {
-          network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
-          tokens: { type: "array", required: true, format: "comma-separated", max_items: 10, description: "Up to 10 token addresses", example: ["0x123...", "0x456..."] }
-        },
-        returns: { type: "array", items: "TokenPrice" },
-        cost: 1
-      },
-      {
-        name: "search",
-        description: "Search across ALL networks for tokens, pools, and DEXes by name, symbol, or address",
-        category: "search",
-        parameters: {
-          query: { type: "string", required: true, description: "Search term", example: "uniswap" }
-        },
-        returns: { type: "object", properties: ["tokens", "pools", "dexes"] },
-        cost: 1
-      },
-      {
-        name: "getStats",
-        description: "Get high-level statistics about the DexPaprika ecosystem",
-        category: "utils",
-        parameters: {},
-        returns: { type: "object", properties: ["chains", "factories", "pools", "tokens"] },
-        cost: 1
-      }
+    network_synonyms: NETWORK_SYNONYMS,
+    workflows: {
+      discover_networks: ['getNetworks'],
+      find_pools_on_network: ['getNetworks', 'getNetworkPools'],
+      filter_pools_by_volume: ['getNetworks', 'getNetworkPoolsFilter'],
+      find_new_pools: [
+        'getNetworkPoolsFilter with created_after',
+        'sort_by=created_at sort_dir=desc',
+      ],
+      token_details_and_pools: ['getTokenDetails', 'getTokenPools'],
+      batch_price_lookup: ['getTokenMultiPrices (max 10 tokens per call)'],
+      top_tokens_on_network: ['getTopTokens'],
+      filter_tokens_by_metrics: ['filterNetworkTokens'],
+      historical_price_chart: ['getPoolOHLCV with start + interval'],
+      recent_swaps: ['getPoolTransactions with from/to UNIX timestamps'],
+      cross_network_search: ['search with token name/symbol/address'],
+    },
+    common_pitfalls: [
+      '/pools (global) returns 410 Gone — use /networks/{network}/pools instead',
+      'getTokenMultiPrices is capped at 10 tokens per request',
+      'getPoolTransactions from/to are UNIX timestamps; results always capped to last 7 days',
+      "Token addresses must match the network (e.g., don't send a Solana address to ethereum queries)",
     ],
-    network_synonyms,
-    validation_rules: {
-      address_formats: {
-        ethereum: "^0x[a-fA-F0-9]{40}$",
-        bsc: "^0x[a-fA-F0-9]{40}$",
-        polygon: "^0x[a-fA-F0-9]{40}$",
-        arbitrum: "^0x[a-fA-F0-9]{40}$",
-        optimism: "^0x[a-fA-F0-9]{40}$",
-        base: "^0x[a-fA-F0-9]{40}$",
-        avalanche: "^0x[a-fA-F0-9]{40}$",
-        fantom: "^0x[a-fA-F0-9]{40}$",
-        blast: "^0x[a-fA-F0-9]{40}$",
-        zksync: "^0x[a-fA-F0-9]{40}$",
-        linea: "^0x[a-fA-F0-9]{40}$",
-        scroll: "^0x[a-fA-F0-9]{40}$",
-        mantle: "^0x[a-fA-F0-9]{40}$",
-        celo: "^0x[a-fA-F0-9]{40}$",
-        cronos: "^0x[a-fA-F0-9]{40}$",
-        solana: "^[1-9A-HJ-NP-Za-km-z]{32,44}$",
-        aptos: "^0x[a-fA-F0-9]{64}$",
-        sui: "^0x[a-fA-F0-9]{64}$",
-        ton: "^[A-Za-z0-9_-]{48}$",
-        tron: "^T[A-Za-z1-9]{33}$"
-      },
-      batch_limits: {
-        getTokenMultiPrices: 10
-      }
-    },
-    rate_limits: {
-      requests_per_day: 10000,
-      burst_limit: 100
-    },
-    error_codes: {
-      DP400_INVALID_NETWORK: "Network ID not recognized. Use network_synonyms to normalize input.",
-      DP400_TOO_MANY_TOKENS: "Exceeded batch limit. Max {limit} tokens per request.",
-      DP400_INVALID_ADDRESS: "Token address format invalid for this network.",
-      DP400_MISSING_REQUIRED: "Required parameter missing.",
-      DP404_NOT_FOUND: "Resource not found. May not exist or be delisted.",
-      DP429_RATE_LIMIT: "Daily rate limit exceeded. Resets at {reset_at}."
-    },
-    meta: {
-      documentation: "https://docs.dexpaprika.com",
-      support: "https://github.com/coinpaprika/claude-marketplace"
-    },
-    workflow_patterns: {
-      discovery: {
-        description: "Discover available networks, DEXes, and pools",
-        steps: [
-          "getNetworks - List all supported blockchain networks",
-          "getNetworkDexes - Find DEXes on a specific network",
-          "getNetworkPools - Browse top liquidity pools",
-        ],
-        example_use_case: "Finding the most active trading pools on a network",
-      },
-      price_tracking: {
-        description: "Track token prices and historical data",
-        steps: [
-          "search - Find token by name, symbol, or address",
-          "getTokenDetails - Get current price and metadata",
-          "getTokenPools - Find all pools containing the token",
-          "getPoolOHLCV - Get historical price data (candlestick charts)",
-        ],
-        example_use_case: "Analyzing price trends for a specific token over 7 days",
-      },
-      multi_price: {
-        description: "Get prices for multiple tokens at once (batch operation)",
-        steps: [
-          "getNetworks - Verify network ID",
-          "getTokenMultiPrices - Fetch up to 10 token prices in one call",
-        ],
-        example_use_case: "Building a portfolio tracker showing multiple token prices",
-        limitations: "Maximum 10 tokens per request",
-      },
-      find_tokens_by_mcap: {
-        description: "Discover tokens within specific market cap ranges",
-        steps: [
-          "getNetworkPools - Get pools sorted by volume",
-          "Extract tokens[].fdv (Fully Diluted Valuation) from response",
-          "Filter tokens where fdv is in your target range (e.g., $10M-$100M)",
-          "getTokenDetails - Deep dive into promising candidates",
-        ],
-        example_use_case: "Finding mid-cap tokens ($10M-$100M) with high trading volume",
-        note: "Currently requires client-side filtering by fdv field",
-      },
-      technical_analysis: {
-        description: "Perform comprehensive technical analysis on a token",
-        steps: [
-          "search - Locate token by name/symbol",
-          "getTokenDetails - Get current metrics (price, fdv, volume)",
-          "getTokenPools - Identify highest liquidity pool",
-          "getPoolOHLCV - Fetch price history (OHLC candlesticks)",
-          "getPoolTransactions - Analyze recent trading activity",
-        ],
-        example_use_case: "Creating buy/sell signals based on price patterns and volume",
-        recommended_intervals: ["5m", "1h", "24h"],
-      },
-      whale_watching: {
-        description: "Monitor large transactions and whale activity",
-        steps: [
-          "getTokenPools - Find pools for target token",
-          "getPoolTransactions - Get recent transactions with details",
-          "Filter by amount_0 or amount_1 for large trades",
-          "Track sender/recipient addresses for patterns",
-        ],
-        example_use_case: "Alert when transactions >$100K occur",
-        tip: "Use cursor pagination for continuous monitoring",
-      },
-      new_token_discovery: {
-        description: "Find newly created tokens and pools",
-        steps: [
-          "getNetworkPools - Sort by created_at descending",
-          "getPoolDetails - Verify liquidity and token info",
-          "getPoolTransactions - Check initial trading activity",
-          "getTokenDetails - Validate token metrics",
-        ],
-        example_use_case: "Finding tokens launched in the last 24 hours",
-        warning: "New tokens are extremely high risk - verify contracts carefully",
-      },
-      dex_comparison: {
-        description: "Compare liquidity across different DEXes",
-        steps: [
-          "getNetworkDexes - List all DEXes on network",
-          "getDexPools - Get pools for each DEX",
-          "Compare volume_usd and transactions across DEXes",
-        ],
-        example_use_case: "Finding best liquidity for a trading pair",
-      },
-      pool_filtering: {
-        description: "Find pools matching specific criteria using server-side filters",
-        steps: [
-          "getNetworkPoolsFilter - Filter by volume, transactions, or creation time",
-          "getPoolDetails - Deep dive into matching pools",
-          "getPoolOHLCV - Analyze price history of filtered pools",
-        ],
-        example_use_case: "Finding high-volume pools created in the last 24 hours",
-        note: "More efficient than fetching all pools and filtering client-side",
-      },
-      arbitrage_opportunities: {
-        description: "Identify price discrepancies across pools",
-        steps: [
-          "getTokenPools - Get all pools for a token",
-          "Compare price_usd across different pools",
-          "getPoolDetails - Verify liquidity depth",
-          "Calculate potential arbitrage profit minus gas",
-        ],
-        example_use_case: "Finding price differences between DEXes",
-        note: "Consider gas fees, slippage, and MEV when calculating profitability",
-      },
-    },
-    parameter_examples: {
-      getNetworkPools: {
-        high_volume_pools: {
-          description: "Top 20 pools by 24h trading volume",
-          params: { network: "ethereum", limit: 20, order_by: "volume_usd", sort: "desc" },
-        },
-        new_pools: {
-          description: "Recently created pools (last 24h)",
-          params: { network: "bsc", order_by: "created_at", sort: "desc", limit: 50 },
-        },
-        most_transactions: {
-          description: "Pools with highest transaction count",
-          params: { network: "base", order_by: "transactions", sort: "desc", limit: 10 },
-        },
-        price_movers: {
-          description: "Pools with biggest 24h price changes",
-          params: { network: "solana", order_by: "last_price_change_usd_24h", sort: "desc", limit: 30 },
-        },
-      },
-      getPoolOHLCV: {
-        last_24h_hourly: {
-          description: "Hourly candlesticks for last 24 hours",
-          params: { network: "ethereum", pool_address: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640", start: "2025-10-15", interval: "1h", limit: 24 },
-        },
-        last_week_daily: {
-          description: "Daily candlesticks for last 7 days",
-          params: { network: "bsc", pool_address: "0x...", start: "2025-10-09", interval: "24h", limit: 7 },
-        },
-        intraday_5min: {
-          description: "5-minute intervals for day trading",
-          params: { network: "base", pool_address: "0x...", start: "2025-10-16T00:00:00Z", interval: "5m", limit: 288, inversed: false },
-        },
-        monthly_overview: {
-          description: "30 days of daily data",
-          params: { network: "arbitrum", pool_address: "0x...", start: "2025-09-16", interval: "24h", limit: 30 },
-        },
-      },
-      getPoolTransactions: {
-        recent_activity: {
-          description: "Last 50 transactions",
-          params: { network: "ethereum", pool_address: "0x...", limit: 50, page: 1 },
-        },
-        whale_trades: {
-          description: "Large transactions (filter client-side by volume)",
-          params: { network: "bsc", pool_address: "0x...", limit: 100, page: 1 },
-          post_filter: "Filter where volume_1 > 10000 for trades >$10K",
-        },
-        cursor_pagination: {
-          description: "Using cursor for efficient pagination",
-          params: { network: "polygon", pool_address: "0x...", limit: 20, cursor: "0xabcd1234..." },
-          note: "Use last transaction ID as cursor for next page",
-        },
-        time_range: {
-          description: "Transactions within a specific time window (last 7 days max)",
-          params: { network: "ethereum", pool_address: "0x...", limit: 100, from: 1712700000, to: 1712800000 },
-          note: "from is inclusive, to is exclusive. Results always capped to last 7 days.",
-        },
-      },
-      getTokenMultiPrices: {
-        portfolio_tracking: {
-          description: "Get prices for multiple tokens at once",
-          params: {
-            network: "ethereum",
-            tokens: [
-              "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-              "0xdac17f958d2ee523a2206206994597c13d831ec7",
-              "0x6b175474e89094c44da98b954eedeac495271d0f"
-            ]
-          },
-          note: "Maximum 10 tokens per request",
-        },
-      },
-      search: {
-        by_name: { description: "Find token by name", params: { query: "uniswap" } },
-        by_symbol: { description: "Find token by ticker symbol", params: { query: "USDC" } },
-        by_address: { description: "Find token by contract address", params: { query: "0xa0b8..." } },
-      },
-    },
-    important_fields: {
-      fdv: { name: "Fully Diluted Valuation", description: "Total supply x current price. Use this for market cap comparisons.", example: "fdv: 50000000 means $50M market cap", use_case: "Filtering tokens by market cap range" },
-      volume_usd: { name: "24h Trading Volume (USD)", description: "Total USD value traded in last 24 hours", use_case: "Identifying liquid vs illiquid tokens" },
-      last_price_change_usd_24h: { name: "24h Absolute Price Change", description: "Absolute price change in USD, NOT percentage", example: "0.5 means +$0.50", calculation: "(last_price_change_usd_24h / price_usd) x 100" },
-      transactions: { name: "Total Transaction Count", description: "Cumulative number of swaps since pool creation", use_case: "Gauge trading activity and pool maturity" },
-      inversed: { name: "Inverse Token Pair", description: "When true, flips token0/token1", example: "USDC/WETH -> WETH/USDC", use_case: "Viewing price from opposite perspective" },
-      price_usd: { name: "Current Price (USD)", description: "Real-time token price in USD", note: "Based on most recent pool transaction" },
-      created_at: { name: "Pool Creation Time", format: "ISO 8601 timestamp", example: "2025-10-16T10:00:08Z", use_case: "Finding new pools, calculating pool age" },
-      "amount_0 / amount_1": { name: "Transaction Token Amounts", description: "Positive = tokens added; Negative = removed", use_case: "Identifying buy vs sell transactions" },
-    },
-    common_pitfalls: {
-      external_apis: { issue: "Using external APIs when DexPaprika has data", solution: "Prefer built-in tools", example: "Don't fetch OHLCV elsewhere when getPoolOHLCV exists" },
-      batch_limits: { issue: "Exceeding 10 token limit in getTokenMultiPrices", solution: "Split requests into batches of 10", example: "For 25 tokens: 10 + 10 + 5" },
-      response_size: { issue: "Response too large", solution: "Reduce limit, start with 10", prevention: "Use fields and smaller limits" },
-      ohlcv_empty: { issue: "getPoolOHLCV returns []", cause: "Pool too new", solution: "Use getPoolTransactions for very new pools" },
-      invalid_network: { issue: "Network not found", solution: "Call getNetworks first", tip: "Check network_synonyms" },
-      pagination_confusion: { issue: "Only fetching page 0", solution: "Use cursor or increment page", note: "Page limit 100" },
-      price_change_misinterpretation: { issue: "Assuming 24h change is percentage", reality: "It's absolute USD", calculation: "(change/price_usd)x100" },
-      fdv_vs_mcap: { issue: "FDV vs circulating market cap", clarification: "FDV includes locked/unvested", note: "Circulating may be lower" },
-    },
-    best_practices: {
-      workflow: [
-        "Always call getCapabilities first",
-        "Call getNetworks to validate network IDs",
-        "Use search to find tokens by name/symbol before details",
-        "Start with small limit values and increase if needed",
-        "Cache getNetworks response",
-      ],
-      performance: [
-        "Use getTokenMultiPrices for batch operations",
-        "Client-side caching for networks and DEX lists",
-        "Use cursor pagination for large histories",
-        "Request only necessary OHLCV intervals",
-      ],
-      data_quality: [
-        "Verify pool liquidity before trading",
-        "Cross-reference token data across pools",
-        "Be cautious with pools <24h old",
-        "Check created_at for brand new tokens",
-      ],
-      error_handling: [
-        "Handle empty OHLCV arrays gracefully",
-        "Retry with backoff for rate limits",
-        "Validate network IDs against getNetworks",
-        "Reduce limits if responses are too large",
-      ],
-    },
-    quick_reference: {
-      market_cap_ranges: {
-        nano_cap: "< $1M (extremely high risk)",
-        micro_cap: "$1M - $10M (very high risk)",
-        small_cap: "$10M - $100M (high risk)",
-        mid_cap: "$100M - $1B (moderate risk)",
-        large_cap: "> $1B (lower risk)",
-      },
-      ohlcv_intervals: {
-        scalping: ["1m", "5m"],
-        day_trading: ["5m", "15m", "1h"],
-        swing_trading: ["1h", "6h", "24h"],
-        position_trading: ["24h"],
-      },
-      order_by_options: [
-        "volume_usd - 24h trading volume",
-        "price_usd - Current price",
-        "transactions - Total swap count",
-        "last_price_change_usd_24h - 24h price change",
-        "created_at - Pool creation time",
-      ],
-      max_limits: {
-        pools_per_request: 100,
-        transactions_per_request: 100,
-        ohlcv_data_points: 366,
-        multi_token_prices: 10,
-        transaction_pages: "Unlimited (use cursor)",
-      },
-      supported_dexes: [
-        "Uniswap V2/V3",
-        "PancakeSwap V2/V3",
-        "SushiSwap",
-        "Curve",
-        "Balancer",
-        "And many more - use getNetworkDexes",
-      ],
-    },
-    error_handling: {
-      empty_ohlcv_array: { error_pattern: "getPoolOHLCV returns []", cause: "Pool created too recently", solution: "Use getPoolTransactions", prevention: "Check created_at" },
-      response_too_large: { error_pattern: "Response exceeds size budget", cause: "Too many items", solution: "Reduce limit or paginate" },
-      invalid_network_id: { error_pattern: "Network not found", cause: "Incorrect network", solution: "Call getNetworks", check: "Use network_synonyms" },
-      rate_limit_exceeded: { error_pattern: "Too many requests", solution: "Exponential backoff", prevention: "Use batching where possible" },
-      invalid_time_range: { error_pattern: "Time range exceeds 1 year", cause: "start/end span too large", solution: "Split into multiple requests", note: "Limit 366 data points" },
-      pool_not_found: { error_pattern: "Pool address not found", cause: "Invalid or unknown pool", solution: "Find from getNetworkPools or getTokenPools", tip: "Addresses are network-specific" },
-    },
-    use_case_templates: {
-      find_trending_tokens: {
-        goal: "Find tokens with >100% gains in last 24h on BSC",
-        steps: [
-          "1. getNetworks -> confirm 'bsc' is valid",
-          "2. getNetworkPools(network='bsc', order_by='last_price_change_usd_24h', sort='desc', limit=50)",
-          "3. Filter results where (last_price_change_usd_24h / price_usd) x 100 > 100",
-          "4. For each promising token: getPoolDetails, getPoolOHLCV, getPoolTransactions",
-          "5. Analyze: volume trends, liquidity, holder activity",
-        ],
-      },
-      build_price_alert_bot: {
-        goal: "Alert when ETH price crosses a threshold",
-        steps: [
-          "1. search(query='WETH') -> find WETH token address",
-          "2. getTokenPools(network='ethereum', token_address='0x...') -> find highest liquidity pool",
-          "3. Poll getPoolDetails to check price_usd",
-          "4. Trigger alert on threshold",
-          "5. Optional: getPoolTransactions to see what triggered the move",
-        ],
-      },
-      analyze_new_token_launch: {
-        goal: "Evaluate a token launched recently",
-        steps: [
-          "1. getNetworkPools(order_by='created_at', sort='desc') -> find recent pools",
-          "2. getPoolDetails -> check liquidity depth, token info",
-          "3. getPoolTransactions(limit=100) -> analyze initial trades",
-          "4. Check: whale wallets? mostly buys or sells?",
-          "5. getTokenDetails -> verify fdv",
-        ],
-      },
-      portfolio_rebalancing: {
-        goal: "Check prices of 15 tokens to rebalance portfolio",
-        steps: [
-          "1. Split 15 tokens into batches: [10] + [5]",
-          "2. getTokenMultiPrices for batch1",
-          "3. getTokenMultiPrices for batch2",
-          "4. Calculate portfolio weights",
-          "5. For tokens to trade: getTokenPools -> find best liquidity",
-        ],
-      },
-    },
-    integration_tips: {
-      trading_bots: [
-        "Cache network IDs and DEX lists",
-        "Implement circuit breakers for rate limits",
-        "Store historical OHLCV locally for longer-term charts",
-      ],
-      portfolio_trackers: [
-        "Use getTokenMultiPrices for efficient batch price fetching",
-        "Cache token metadata (symbols, names)",
-        "Poll price updates every 30-60s",
-      ],
-      analytics_dashboards: [
-        "Pre-fetch and cache getNetworks and getNetworkDexes",
-        "Use lazy loading; avoid fetching all pools upfront",
-        "Use transaction data for volume charts",
-      ],
-      token_screeners: [
-        "Fetch pools with high volume",
-        "Client-side filter by fdv for market cap ranges",
-        "Use created_at to separate new vs established tokens",
-        "Combine filters: volume + fdv + price_change",
-      ],
-    },
-    version_history: {
-      "1.1.0": "Added capabilities endpoint and basic workflows; enhanced with detailed examples and guidance",
-      "1.2.0": "Added getNetworkPoolsFilter tool; fixed pagination to 1-indexed; updated stats to 33 networks, 28M+ pools, 25M+ tokens",
-      "1.4.0": "Added filterNetworkTokens and getTopTokens tools; expanded getNetworkPoolsFilter with volume_7d, liquidity params; enriched network/dex responses with volume, txns, pools_count",
-      "1.3.0": "Synced npm package with hosted MCP server; added getCapabilities, getNetworkPoolsFilter; structured error handling; snake_case parameters",
-    },
+    documentation: 'https://docs.dexpaprika.com',
+    agent_skills: 'https://dexpaprika.com/agents/skill.md',
   };
 }
 
-// MCP server instance
-const server = new McpServer({
-  name: 'dexpaprika',
-  version: SERVER_VERSION,
-  description: 'MCP server for accessing DexPaprika API data for decentralized exchanges and tokens',
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// MCP server instance.
+// ─────────────────────────────────────────────────────────────────────────────
+const server = new McpServer(
+  {
+    name: 'dexpaprika',
+    version: SERVER_VERSION,
+  },
+  {
+    instructions: SERVER_INSTRUCTIONS,
+  },
+);
 
-// getNetworks
-server.tool(
+// Helper: register a read tool with rationale + outputSchema + read-only annotations.
+function registerReadTool(name, description, inputShape, handler) {
+  server.registerTool(
+    name,
+    {
+      description,
+      inputSchema: { ...inputShape, rationale: rationaleZod },
+      outputSchema: outputSchemaFor(name),
+      annotations: ANNOTATIONS_READ_ONLY,
+    },
+    handler,
+  );
+}
+
+// ─── getNetworks ─────────────────────────────────────────────────────────────
+registerReadTool(
   'getNetworks',
-  'START HERE: Prefer calling getCapabilities first to see workflows and examples. Then use this to list supported networks.',
+  'START HERE: list all supported blockchain networks with current 24h volume and indexing stats. Prefer calling getCapabilities first to see workflows and synonyms.',
+  {},
   async () => {
     try {
-      const response = await fetchFromAPI('/networks');
-      return formatMcpResponse(response);
+      return jsonText(await fetchFromAPI('/networks'), 'networks');
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getCapabilities
-server.tool(
+// ─── getCapabilities (local-only, no upstream call) ──────────────────────────
+registerReadTool(
   'getCapabilities',
-  'Return server capabilities, workflow patterns, network synonyms, common pitfalls, and best-practice sequences. Use this to onboard agents quickly.',
+  'Return server capabilities, workflow patterns, network synonyms, common pitfalls, and best-practice sequences. Use this to onboard agents quickly. No parameters required beyond rationale.',
+  {},
   async () => {
     try {
-      const doc = await buildCapabilitiesDocument();
-      return { content: [{ type: "text", text: JSON.stringify(doc, null, 2) }] };
+      return jsonText(buildCapabilitiesDocument());
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getNetworkDexes
-server.tool(
+// ─── getNetworkDexes ─────────────────────────────────────────────────────────
+registerReadTool(
   'getNetworkDexes',
-  'Get available DEXes on a specific network. TIP: Call getCapabilities for examples. REQUIRED: network. OPTIONAL: page, limit, sort, order_by.',
+  'Get available DEXes on a specific network. REQUIRED: network. OPTIONAL: page, limit, sort_dir/sort, sort_by/order_by.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(10).describe("OPTIONAL: Number of items per page (default: 10, max: 100)"),
-    sort: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort order (default: 'desc')"),
-    order_by: z.enum(['pool']).optional().describe("OPTIONAL: How to order the returned data")
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction, 'asc' or 'desc' (default: 'desc')"),
+    sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
+    sort_by: z.enum(['pool']).optional().describe("OPTIONAL (preferred): Field to sort by (only 'pool')"),
+    order_by: z.enum(['pool']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
   },
-  async ({ network, page, limit, sort, order_by }) => {
+  async (args) => {
     try {
-      let endpoint = `/networks/${network}/dexes?page=${page}&limit=${limit}`;
-      if (sort) endpoint += `&sort=${sort}`;
-      if (order_by) endpoint += `&order_by=${order_by}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      const { network } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 10;
+      const direction = args.sort_dir ?? args.sort ?? 'desc';
+      const field = args.sort_by ?? args.order_by; // no default — may be undefined
+      let endpoint = `/networks/${network}/dexes?page=${page}&limit=${limit}&sort=${direction}`;
+      if (field) endpoint += `&order_by=${field}`;
+      const upstream = await fetchFromAPI(endpoint);
+      // Upstream ignores limit and returns the full list — slice client-side.
+      if (upstream && Array.isArray(upstream.dexes)) {
+        const total = upstream.dexes.length;
+        const effectivePage = Math.max(1, Number(page ?? 1));
+        const effectiveLimit = Math.max(1, Number(limit ?? 10));
+        const start = (effectivePage - 1) * effectiveLimit;
+        upstream.dexes = upstream.dexes.slice(start, start + effectiveLimit);
+        upstream.page_info = {
+          ...(upstream.page_info ?? {}),
+          limit: effectiveLimit,
+          page: effectivePage,
+          total_items: total,
+          total_pages: Math.max(1, Math.ceil(total / effectiveLimit)),
+        };
+      }
+      return jsonText(upstream);
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getNetworkPools
-server.tool(
+// ─── getNetworkPools ─────────────────────────────────────────────────────────
+registerReadTool(
   'getNetworkPools',
-  'PRIMARY POOL FUNCTION: Get top liquidity pools on a network. TIP: Call getCapabilities first for parameter examples. REQUIRED: network. OPTIONAL: page, limit, sort, order_by.',
+  'PRIMARY POOL FUNCTION: get top liquidity pools on a network. REQUIRED: network. OPTIONAL: page, limit, sort_dir/sort, sort_by/order_by.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(10).describe("OPTIONAL: Number of items per page (default: 10, max: 100)"),
-    sort: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort order (default: 'desc')"),
-    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().default('volume_usd').describe("OPTIONAL: Field to order by (default: 'volume_usd')")
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
+    sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
+    sort_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd')"),
+    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
   },
-  async ({ network, page, limit, sort, order_by }) => {
+  async (args) => {
     try {
-      const endpoint = `/networks/${network}/pools?page=${page}&limit=${limit}&sort=${sort}&order_by=${order_by}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      const { network } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 10;
+      const direction = args.sort_dir ?? args.sort ?? 'desc';
+      const field = args.sort_by ?? args.order_by ?? 'volume_usd';
+      const endpoint = `/networks/${network}/pools?page=${page}&limit=${limit}&sort=${direction}&order_by=${field}`;
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getDexPools
-server.tool(
+// ─── getDexPools ─────────────────────────────────────────────────────────────
+registerReadTool(
   'getDexPools',
-  'Get pools from a specific DEX on a network. TIP: See examples in getCapabilities. REQUIRED: network, dex. OPTIONAL: page, limit, sort, order_by.',
+  'Get pools from a specific DEX on a network. REQUIRED: network, dex. OPTIONAL: page, limit, sort_dir/sort, sort_by/order_by.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     dex: z.string().describe("REQUIRED: DEX identifier from getNetworkDexes (e.g., 'uniswap_v3')"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(10).describe("OPTIONAL: Number of items per page (default: 10, max: 100)"),
-    sort: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort order (default: 'desc')"),
-    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().default('volume_usd').describe("OPTIONAL: Field to order by (default: 'volume_usd')")
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
+    sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
+    sort_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd')"),
+    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
   },
-  async ({ network, dex, page, limit, sort, order_by }) => {
+  async (args) => {
     try {
-      const endpoint = `/networks/${network}/dexes/${dex}/pools?page=${page}&limit=${limit}&sort=${sort}&order_by=${order_by}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      const { network, dex } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 10;
+      const direction = args.sort_dir ?? args.sort ?? 'desc';
+      const field = args.sort_by ?? args.order_by ?? 'volume_usd';
+      const endpoint = `/networks/${network}/dexes/${dex}/pools?page=${page}&limit=${limit}&sort=${direction}&order_by=${field}`;
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getNetworkPoolsFilter
-server.tool(
+// ─── getNetworkPoolsFilter ───────────────────────────────────────────────────
+registerReadTool(
   'getNetworkPoolsFilter',
-  'Filter pools by volume, liquidity, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after, created_before, sort_by, sort_dir.',
+  'Filter pools by volume, liquidity, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after, created_before, sort_by/order_by, sort_dir/sort.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(50).describe("OPTIONAL: Number of items per page (default: 50, max: 100)"),
-    volume_24h_min: z.number().optional().describe("OPTIONAL: Minimum 24h volume in USD"),
-    volume_24h_max: z.number().optional().describe("OPTIONAL: Maximum 24h volume in USD"),
-    volume_7d_min: z.number().optional().describe("OPTIONAL: Minimum 7d volume in USD"),
-    volume_7d_max: z.number().optional().describe("OPTIONAL: Maximum 7d volume in USD"),
-    liquidity_usd_min: z.number().optional().describe("OPTIONAL: Minimum pool liquidity in USD"),
-    liquidity_usd_max: z.number().optional().describe("OPTIONAL: Maximum pool liquidity in USD"),
-    txns_24h_min: z.number().optional().describe("OPTIONAL: Minimum number of transactions in 24h"),
-    created_after: z.number().optional().describe("OPTIONAL: Only pools created after this UNIX timestamp"),
-    created_before: z.number().optional().describe("OPTIONAL: Only pools created before this UNIX timestamp"),
-    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity', 'txns_24h', 'created_at']).optional().default('volume_24h').describe("OPTIONAL: Field to sort by (default: 'volume_24h')"),
-    sort_dir: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort direction (default: 'desc')")
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
+    volume_24h_min: z.number().optional().describe('OPTIONAL: Minimum 24h volume in USD'),
+    volume_24h_max: z.number().optional().describe('OPTIONAL: Maximum 24h volume in USD'),
+    volume_7d_min: z.number().optional().describe('OPTIONAL: Minimum 7d volume in USD'),
+    volume_7d_max: z.number().optional().describe('OPTIONAL: Maximum 7d volume in USD'),
+    liquidity_usd_min: z.number().optional().describe('OPTIONAL: Minimum pool liquidity in USD'),
+    liquidity_usd_max: z.number().optional().describe('OPTIONAL: Maximum pool liquidity in USD'),
+    txns_24h_min: z.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
+    created_after: z.number().optional().describe('OPTIONAL: Only pools created after this UNIX timestamp'),
+    created_before: z.number().optional().describe('OPTIONAL: Only pools created before this UNIX timestamp'),
+    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity', 'txns_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_24h')"),
+    order_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity', 'txns_24h', 'created_at']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
+    sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
   },
-  async ({ network, page, limit, volume_24h_min, volume_24h_max, volume_7d_min, volume_7d_max, liquidity_usd_min, liquidity_usd_max, txns_24h_min, created_after, created_before, sort_by, sort_dir }) => {
+  async (args) => {
     try {
+      const { network } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 50;
+      const sort_by = args.sort_by ?? args.order_by ?? 'volume_24h';
+      const sort_dir = args.sort_dir ?? args.sort ?? 'desc';
       let endpoint = `/networks/${network}/pools/filter?page=${page}&limit=${limit}&sort_by=${sort_by}&sort_dir=${sort_dir}`;
-      if (volume_24h_min !== undefined) endpoint += `&volume_24h_min=${volume_24h_min}`;
-      if (volume_24h_max !== undefined) endpoint += `&volume_24h_max=${volume_24h_max}`;
-      if (volume_7d_min !== undefined) endpoint += `&volume_7d_min=${volume_7d_min}`;
-      if (volume_7d_max !== undefined) endpoint += `&volume_7d_max=${volume_7d_max}`;
-      if (liquidity_usd_min !== undefined) endpoint += `&liquidity_usd_min=${liquidity_usd_min}`;
-      if (liquidity_usd_max !== undefined) endpoint += `&liquidity_usd_max=${liquidity_usd_max}`;
-      if (txns_24h_min !== undefined) endpoint += `&txns_24h_min=${txns_24h_min}`;
-      if (created_after !== undefined) endpoint += `&created_after=${created_after}`;
-      if (created_before !== undefined) endpoint += `&created_before=${created_before}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      for (const k of ['volume_24h_min', 'volume_24h_max', 'volume_7d_min', 'volume_7d_max', 'liquidity_usd_min', 'liquidity_usd_max', 'txns_24h_min', 'created_after', 'created_before']) {
+        if (args[k] !== undefined) endpoint += `&${k}=${args[k]}`;
+      }
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getPoolDetails
-server.tool(
+// ─── getPoolDetails ──────────────────────────────────────────────────────────
+registerReadTool(
   'getPoolDetails',
-  'Get detailed info about a pool. TIP: Use getCapabilities for workflows. REQUIRED: network, pool_address. OPTIONAL: inversed.',
+  'Get detailed info about a pool. REQUIRED: network, pool_address. OPTIONAL: inversed.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe("REQUIRED: Pool address or identifier (e.g., '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640')"),
-    inversed: z.boolean().optional().default(false).describe("OPTIONAL: Whether to invert the price ratio (default: false)")
+    inversed: z.boolean().optional().default(false).describe('OPTIONAL: Whether to invert the price ratio (default: false)'),
   },
   async ({ network, pool_address, inversed }) => {
     try {
       const endpoint = `/networks/${network}/pools/${pool_address}?inversed=${inversed}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getPoolOHLCV
-server.tool(
+// ─── getPoolOHLCV ────────────────────────────────────────────────────────────
+registerReadTool(
   'getPoolOHLCV',
-  'Get historical price data (OHLCV) for a pool. TIP: See intervals in getCapabilities. REQUIRED: network, pool_address, start. OPTIONAL: end, limit, interval, inversed.',
+  'Get historical price data (OHLCV) for a pool. REQUIRED: network, pool_address, start. OPTIONAL: end, limit, interval, inversed.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    pool_address: z.string().describe("REQUIRED: Pool address or identifier"),
-    start: z.string().describe("REQUIRED: Start time for historical data (Unix timestamp, RFC3339 timestamp, or yyyy-mm-dd format)"),
-    end: z.string().optional().describe("OPTIONAL: End time for historical data (max 1 year from start)"),
-    limit: z.number().optional().default(1).describe("OPTIONAL: Number of data points to retrieve (default: 1, max: 366)"),
+    pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
+    start: z.string().describe('REQUIRED: Start time for historical data (Unix timestamp, RFC3339 timestamp, or yyyy-mm-dd format)'),
+    end: z.string().optional().describe('OPTIONAL: End time for historical data (max 1 year from start)'),
+    limit: z.number().optional().default(100).describe('OPTIONAL: Number of data points to retrieve (default: 100, max: 366)'),
     interval: z.enum(['1m', '5m', '10m', '15m', '30m', '1h', '6h', '12h', '24h']).optional().default('24h').describe("OPTIONAL: Interval granularity (default: '24h')"),
-    inversed: z.boolean().optional().default(false).describe("OPTIONAL: Whether to invert the price ratio for alternative pair perspective (default: false)")
+    inversed: z.boolean().optional().default(false).describe('OPTIONAL: Whether to invert the price ratio for alternative pair perspective (default: false)'),
   },
   async ({ network, pool_address, start, end, limit, interval, inversed }) => {
     try {
       let endpoint = `/networks/${network}/pools/${pool_address}/ohlcv?start=${encodeURIComponent(start)}&limit=${limit}&interval=${interval}&inversed=${inversed}`;
       if (end) endpoint += `&end=${encodeURIComponent(end)}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      return jsonText(await fetchFromAPI(endpoint), 'ohlcv');
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getPoolTransactions
-server.tool(
+// ─── getPoolTransactions ─────────────────────────────────────────────────────
+registerReadTool(
   'getPoolTransactions',
-  'Get recent transactions for a pool. TIP: Use cursor for long histories (see getCapabilities). Use from/to for time-range filtering (UNIX timestamps, results capped to last 7 days). REQUIRED: network, pool_address. OPTIONAL: page, limit, cursor, from, to.',
+  'Get recent transactions for a pool. Use from/to for time-range filtering (UNIX epoch seconds, results capped to last 7 days). REQUIRED: network, pool_address. OPTIONAL: page, limit, cursor, from, to.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    pool_address: z.string().describe("REQUIRED: Pool address or identifier"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination, up to 100 pages (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(10).describe("OPTIONAL: Number of items per page (default: 10, max: 100)"),
-    cursor: z.string().optional().describe("OPTIONAL: Transaction ID used for cursor-based pagination"),
-    from: z.number().optional().describe("OPTIONAL: Filter transactions starting from this UNIX timestamp (inclusive). Results always capped to last 7 days."),
-    to: z.number().optional().describe("OPTIONAL: Filter transactions up to this UNIX timestamp (exclusive). Must be after 'from'.")
+    pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination, up to 100 pages (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    cursor: z.string().optional().describe('OPTIONAL: Transaction ID used for cursor-based pagination'),
+    from: z.number().optional().describe('OPTIONAL: Filter transactions starting from this UNIX timestamp (inclusive). Results always capped to last 7 days.'),
+    to: z.number().optional().describe("OPTIONAL: Filter transactions up to this UNIX timestamp (exclusive). Must be after 'from'."),
   },
-  async ({ network, pool_address, page, limit, cursor, from, to }) => {
+  async (args) => {
     try {
+      const { network, pool_address, cursor, from, to } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 10;
       let endpoint = `/networks/${network}/pools/${pool_address}/transactions?page=${page}&limit=${limit}`;
       if (cursor) endpoint += `&cursor=${encodeURIComponent(cursor)}`;
       if (from !== undefined) endpoint += `&from=${from}`;
       if (to !== undefined) endpoint += `&to=${to}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getTokenDetails
-server.tool(
+// ─── getTokenDetails ─────────────────────────────────────────────────────────
+registerReadTool(
   'getTokenDetails',
-  'Get detailed information about a token. TIP: Normalize networks via getCapabilities synonyms. REQUIRED: network, token_address.',
+  'Get detailed information about a token. REQUIRED: network, token_address.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    token_address: z.string().describe("REQUIRED: Token contract address (e.g., 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN' for Jupiter on Solana)")
+    token_address: z.string().describe("REQUIRED: Token contract address (e.g., 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN' for Jupiter on Solana)"),
   },
   async ({ network, token_address }) => {
     try {
       const endpoint = `/networks/${network}/tokens/${token_address}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
-);
-
-// getTokenPools
-server.tool(
-  'getTokenPools',
-  'Get liquidity pools containing a token. TIP: Use fields to reduce payloads. REQUIRED: network, token_address. OPTIONAL: page, limit, sort, order_by, reorder, address.',
-  {
-    network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    token_address: z.string().describe("REQUIRED: Token contract address"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(10).describe("OPTIONAL: Number of items per page (default: 10, max: 100)"),
-    sort: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort order (default: 'desc')"),
-    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().default('volume_usd').describe("OPTIONAL: Field to order by (default: 'volume_usd')"),
-    reorder: z.boolean().optional().describe("OPTIONAL: If true, reorders the pool so that the specified token becomes the primary token for all metrics"),
-    address: z.string().optional().describe("OPTIONAL: Filter pools that contain this additional token address")
   },
-  async ({ network, token_address, page, limit, sort, order_by, reorder, address }) => {
-    try {
-      let endpoint = `/networks/${network}/tokens/${token_address}/pools?page=${page}&limit=${limit}&sort=${sort}&order_by=${order_by}`;
-      if (reorder !== undefined) endpoint += `&reorder=${reorder}`;
-      if (address) endpoint += `&address=${encodeURIComponent(address)}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
-    } catch (error) {
-      return formatMcpError(error);
-    }
-  }
 );
 
-// getTokenMultiPrices
-server.tool(
-  'getTokenMultiPrices',
-  'Get batched prices for multiple tokens. TIP: Max 10; join into a single comma-separated tokens string. REQUIRED: network, tokens.',
+// ─── getTokenPools ───────────────────────────────────────────────────────────
+registerReadTool(
+  'getTokenPools',
+  'Get liquidity pools containing a token. REQUIRED: network, token_address. OPTIONAL: page, limit, sort_dir/sort, sort_by/order_by, inversed/reorder, paired_token_address/address.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    tokens: z.array(z.string()).nonempty().describe("REQUIRED: Up to 10 token addresses. Will be serialized as a single comma-separated query param (?tokens=a,b,c).")
+    token_address: z.string().describe('REQUIRED: Token contract address'),
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
+    sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
+    sort_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd')"),
+    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    inversed: z.boolean().optional().describe("OPTIONAL (preferred): Flip the pool's pair perspective so the specified token becomes primary"),
+    reorder: z.boolean().optional().describe('OPTIONAL (deprecated alias of inversed): Reorder the pool'),
+    paired_token_address: z.string().optional().describe('OPTIONAL (preferred): Filter pools that also contain this token address'),
+    address: z.string().optional().describe('OPTIONAL (deprecated alias of paired_token_address): Additional token address filter'),
+  },
+  async (args) => {
+    try {
+      const { network, token_address } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 10;
+      const direction = args.sort_dir ?? args.sort ?? 'desc';
+      const field = args.sort_by ?? args.order_by ?? 'volume_usd';
+      const flip = args.inversed ?? args.reorder; // may be undefined
+      const paired = args.paired_token_address ?? args.address; // may be undefined
+      let endpoint = `/networks/${network}/tokens/${token_address}/pools?page=${page}&limit=${limit}&sort=${direction}&order_by=${field}`;
+      if (flip !== undefined) endpoint += `&reorder=${flip}`;
+      if (paired) endpoint += `&address=${encodeURIComponent(paired)}`;
+      return jsonText(await fetchFromAPI(endpoint));
+    } catch (error) {
+      return errorText(error);
+    }
+  },
+);
+
+// ─── getTokenMultiPrices (hand-built response, not jsonText) ──────────────────
+registerReadTool(
+  'getTokenMultiPrices',
+  'Get batched prices for multiple tokens. Max 10 tokens per call, same network. REQUIRED: network, tokens.',
+  {
+    network: z.string().describe('REQUIRED: Network ID from getNetworks'),
+    tokens: z.array(z.string()).min(1).max(10).describe('REQUIRED: Up to 10 token contract addresses on the same network.'),
   },
   async ({ network, tokens }) => {
     try {
       if (tokens.length > 10) {
-        const error = buildErrorResponse(
-          ErrorCodes.DP400_TOO_MANY_TOKENS,
-          "Too many tokens in batch request",
-          false,
-          "Split request into batches of max 10 tokens each",
-          `getTokenMultiPrices('ethereum', ['0x123...', '0x456...']) // max 10`,
-          { limit: 10, provided: tokens.length }
-        );
-        return formatMcpResponse(error);
+        return jsonText({
+          error: 'Too many tokens',
+          message: 'getTokenMultiPrices accepts at most 10 tokens per call.',
+          provided: tokens.length,
+          limit: 10,
+        });
       }
       const joined = tokens.join(',');
-      const endpoint = `/networks/${network}/multi/prices?tokens=${encodeURIComponent(joined)}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      const upstream = await fetchFromAPI(`/networks/${network}/multi/prices?tokens=${encodeURIComponent(joined)}`);
+      const prices = Array.isArray(upstream) ? upstream : [];
+      // Upstream silently drops tokens it can't price — surface them so callers
+      // can detect partial failures without a set-difference of their own.
+      const returnedIds = new Set(prices.map((p) => String(p?.id ?? '').toLowerCase()));
+      const missing_tokens = tokens.filter((t) => !returnedIds.has(t.toLowerCase()));
+      const enriched = { prices, missing_tokens };
+      return {
+        content: [{ type: 'text', text: JSON.stringify(enriched) }],
+        structuredContent: enriched,
+      };
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// filterNetworkTokens
-server.tool(
+// ─── filterNetworkTokens ─────────────────────────────────────────────────────
+registerReadTool(
   'filterNetworkTokens',
-  'Filter tokens by volume, liquidity, FDV, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, liquidity_usd_min, fdv_min/max, txns_24h_min, created_after/before, sort_by, sort_dir.',
+  'Filter tokens by volume, liquidity, FDV, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, liquidity_usd_min, fdv_min/max, txns_24h_min, created_after/before, sort_by/order_by, sort_dir/sort.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(50).describe("OPTIONAL: Number of items per page (default: 50, max: 100)"),
-    volume_24h_min: z.number().optional().describe("OPTIONAL: Minimum 24h volume in USD"),
-    volume_24h_max: z.number().optional().describe("OPTIONAL: Maximum 24h volume in USD"),
-    liquidity_usd_min: z.number().optional().describe("OPTIONAL: Minimum token liquidity in USD"),
-    fdv_min: z.number().optional().describe("OPTIONAL: Minimum fully diluted valuation in USD"),
-    fdv_max: z.number().optional().describe("OPTIONAL: Maximum fully diluted valuation in USD"),
-    txns_24h_min: z.number().optional().describe("OPTIONAL: Minimum number of transactions in 24h"),
-    created_after: z.number().optional().describe("OPTIONAL: Only tokens created after this UNIX timestamp"),
-    created_before: z.number().optional().describe("OPTIONAL: Only tokens created before this UNIX timestamp"),
-    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'fdv']).optional().default('volume_24h').describe("OPTIONAL: Field to sort by (default: 'volume_24h')"),
-    sort_dir: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort direction (default: 'desc')")
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
+    volume_24h_min: z.number().optional().describe('OPTIONAL: Minimum 24h volume in USD'),
+    volume_24h_max: z.number().optional().describe('OPTIONAL: Maximum 24h volume in USD'),
+    liquidity_usd_min: z.number().optional().describe('OPTIONAL: Minimum token liquidity in USD'),
+    fdv_min: z.number().optional().describe('OPTIONAL: Minimum fully diluted valuation in USD'),
+    fdv_max: z.number().optional().describe('OPTIONAL: Maximum fully diluted valuation in USD'),
+    txns_24h_min: z.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
+    created_after: z.number().optional().describe('OPTIONAL: Only tokens created after this UNIX timestamp'),
+    created_before: z.number().optional().describe('OPTIONAL: Only tokens created before this UNIX timestamp'),
+    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'fdv']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_24h')"),
+    order_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'fdv']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
+    sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
   },
-  async ({ network, page, limit, volume_24h_min, volume_24h_max, liquidity_usd_min, fdv_min, fdv_max, txns_24h_min, created_after, created_before, sort_by, sort_dir }) => {
+  async (args) => {
     try {
+      const { network } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 50;
+      const sort_by = args.sort_by ?? args.order_by ?? 'volume_24h';
+      const sort_dir = args.sort_dir ?? args.sort ?? 'desc';
       let endpoint = `/networks/${network}/tokens/filter?page=${page}&limit=${limit}&sort_by=${sort_by}&sort_dir=${sort_dir}`;
-      if (volume_24h_min !== undefined) endpoint += `&volume_24h_min=${volume_24h_min}`;
-      if (volume_24h_max !== undefined) endpoint += `&volume_24h_max=${volume_24h_max}`;
-      if (liquidity_usd_min !== undefined) endpoint += `&liquidity_usd_min=${liquidity_usd_min}`;
-      if (fdv_min !== undefined) endpoint += `&fdv_min=${fdv_min}`;
-      if (fdv_max !== undefined) endpoint += `&fdv_max=${fdv_max}`;
-      if (txns_24h_min !== undefined) endpoint += `&txns_24h_min=${txns_24h_min}`;
-      if (created_after !== undefined) endpoint += `&created_after=${created_after}`;
-      if (created_before !== undefined) endpoint += `&created_before=${created_before}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      for (const k of ['volume_24h_min', 'volume_24h_max', 'liquidity_usd_min', 'fdv_min', 'fdv_max', 'txns_24h_min', 'created_after', 'created_before']) {
+        if (args[k] !== undefined) endpoint += `&${k}=${args[k]}`;
+      }
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getTopTokens
-server.tool(
+// ─── getTopTokens ────────────────────────────────────────────────────────────
+registerReadTool(
   'getTopTokens',
-  'Get top tokens on a network ranked by volume, price, liquidity, or activity. Each token includes enriched metadata and multi-timeframe metrics (24h, 1h, 5m). REQUIRED: network. OPTIONAL: page, limit, order_by, sort.',
+  'Get top tokens on a network ranked by volume, price, liquidity, or activity. Each token includes enriched metadata and multi-timeframe metrics (24h, 1h, 5m). REQUIRED: network. OPTIONAL: page, limit, sort_by/order_by, sort_dir/sort.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe("OPTIONAL: Page number for pagination (default: 1, 1-indexed)"),
-    limit: z.number().optional().default(50).describe("OPTIONAL: Number of items per page (default: 50, max: 100)"),
-    order_by: z.enum(['volume_24h', 'price_usd', 'liquidity_usd', 'txns', 'price_change']).optional().default('volume_24h').describe("OPTIONAL: Field to order by (default: 'volume_24h')"),
-    sort: z.enum(['asc', 'desc']).optional().default('desc').describe("OPTIONAL: Sort direction (default: 'desc')")
+    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    limit: z.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
+    sort_by: z.enum(['volume_24h', 'price_usd', 'liquidity_usd', 'txns', 'price_change']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_24h')"),
+    order_by: z.enum(['volume_24h', 'price_usd', 'liquidity_usd', 'txns', 'price_change']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
+    sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
   },
-  async ({ network, page, limit, order_by, sort }) => {
+  async (args) => {
     try {
-      const endpoint = `/networks/${network}/tokens/top?page=${page}&limit=${limit}&order_by=${order_by}&sort=${sort}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      const { network } = args;
+      const page = coercePage(args.page);
+      const limit = args.limit ?? 50;
+      const direction = args.sort_dir ?? args.sort ?? 'desc';
+      const field = args.sort_by ?? args.order_by ?? 'volume_24h';
+      const endpoint = `/networks/${network}/tokens/top?page=${page}&limit=${limit}&order_by=${field}&sort=${direction}`;
+      return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// search
-server.tool(
+// ─── search (cross-network) ──────────────────────────────────────────────────
+registerReadTool(
   'search',
-  "Search across ALL networks for tokens, pools, and DEXes by name, symbol, or address. Good starting point when you don't know the specific network. Returns matching tokens, pools, and DEXes. REQUIRED: query. No optional parameters.",
+  "Search across ALL networks for tokens, pools, and DEXes by name, symbol, or address. Good starting point when you don't know the specific network. REQUIRED: query. OPTIONAL: limit (per-category, applied client-side).",
   {
-    query: z.string().describe("REQUIRED: Search term (e.g., 'uniswap', 'bitcoin', 'ethereum', or a token address)")
+    query: z.string().describe("REQUIRED: Search term (e.g., 'uniswap', 'bitcoin', or a token address)"),
+    limit: z.number().optional().describe('OPTIONAL: Max results per category (tokens/pools/dexes), applied client-side'),
   },
-  async ({ query }) => {
+  async ({ query, limit }) => {
     try {
-      const endpoint = `/search?query=${encodeURIComponent(query)}`;
-      const response = await fetchFromAPI(endpoint);
-      return formatMcpResponse(response);
+      const upstream = await fetchFromAPI(`/search?query=${encodeURIComponent(query)}`);
+      // Rename dex_id -> factory_id in pools[] for consistency with getPoolDetails.
+      if (upstream && Array.isArray(upstream.pools)) {
+        upstream.pools = upstream.pools.map((p) => {
+          if (p && typeof p === 'object' && 'dex_id' in p) {
+            const { dex_id, ...rest } = p;
+            return { ...rest, factory_id: dex_id };
+          }
+          return p;
+        });
+      }
+      // Client-side per-category limit. Never sent upstream.
+      if (limit !== undefined && upstream && typeof upstream === 'object') {
+        const n = Math.max(1, Math.floor(limit));
+        for (const key of ['tokens', 'pools', 'dexes']) {
+          if (Array.isArray(upstream[key])) upstream[key] = upstream[key].slice(0, n);
+        }
+      }
+      return jsonText(upstream);
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// getStats
-server.tool(
+// ─── getStats ────────────────────────────────────────────────────────────────
+registerReadTool(
   'getStats',
-  'Get high-level statistics about the DexPaprika ecosystem: total networks, DEXes, pools, and tokens available. Provides a quick overview of the platform\'s coverage. No parameters required.',
+  'Get high-level statistics about the DexPaprika ecosystem: total chains, factories, pools, and tokens indexed. No parameters required beyond rationale.',
+  {},
   async () => {
     try {
-      const response = await fetchFromAPI('/stats');
-      return formatMcpResponse(response);
+      return jsonText(await fetchFromAPI('/stats'));
     } catch (error) {
-      return formatMcpError(error);
+      return errorText(error);
     }
-  }
+  },
 );
 
-// Start the server
+// ─── submitFeedback (17th tool, NO rationale, write annotation) ──────────────
+// stdio has no D1; we degrade to a structured ack instead of a DB INSERT.
+server.registerTool(
+  'submitFeedback',
+  {
+    description:
+      "Call this when you got stuck, when a tool's response was unexpected, when you needed information that wasn't available, or when something didn't behave as documented. Low friction — submit even partial feedback. We read every submission. Does NOT require a 'rationale' field; the goal/expected/observed fields below ARE the rationale.",
+    inputSchema: {
+      goal: z.string().min(10).max(500).describe('REQUIRED. What you were trying to accomplish (10-500 chars).'),
+      attempted_tools: z.array(z.string()).optional().describe('OPTIONAL. Tools you tried before getting stuck.'),
+      blocked_at: z.string().optional().describe('OPTIONAL. Where exactly you got blocked.'),
+      expected: z.string().max(500).optional().describe('OPTIONAL. What you expected to happen (max 500 chars).'),
+      observed: z.string().max(500).optional().describe('OPTIONAL. What actually happened (max 500 chars).'),
+      severity: z.enum(['blocker', 'major', 'minor', 'nit']).optional().default('minor').describe("OPTIONAL. Impact severity (default: 'minor')."),
+    },
+    outputSchema: outputSchemaFor('submitFeedback'),
+    annotations: ANNOTATIONS_WRITE_FEEDBACK,
+  },
+  async ({ severity }) => {
+    // No D1 / no analytics sink in the self-host build. Accept and acknowledge.
+    const ack = {
+      ok: true,
+      tracking_id: null,
+      message: 'Thanks. This self-host build does not persist feedback; please open an issue at https://github.com/coinpaprika/dexpaprika-mcp for anything actionable.',
+      severity: severity ?? 'minor',
+    };
+    return jsonText(ack);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Start the server over stdio.
+// ─────────────────────────────────────────────────────────────────────────────
 async function main() {
   try {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('DexPaprika MCP server is running...');
+    console.error('DexPaprika MCP server (v2.0.0) is running...');
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

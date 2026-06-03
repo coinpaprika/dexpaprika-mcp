@@ -2,6 +2,36 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.0.0] - 2026-06-03
+
+Full 1:1 contract parity with the hosted DexPaprika MCP worker (`mcp.dexpaprika.com`) v2.0.0. Only the transport differs (stdio vs HTTP); tools, parameters, aliases, synonym resolution, sort normalization, output schemas, server instructions and version now match the worker.
+
+### Breaking changes
+
+- **Response shape — the `{ data, meta }` wrapper is gone.** Previously every tool wrapped its payload as `{ data: <payload>, meta: { rate_limit, response_time_ms, cached, timestamp } }`. Now each tool returns the upstream payload directly, in two forms: `content[0].text` (the JSON string, for older clients) and `structuredContent` (the same object, validated against the tool's `outputSchema`, MCP 2025-06-18+). The per-request `meta` block (rate-limit counters, response time) is no longer emitted. Consumers that read `response.data` must now read the top level. This is intentional and aligns the self-host build with the worker's wire shape.
+- **Array tools wrap under named keys** in `structuredContent`: `getNetworks` → `{ networks: [...] }`, `getPoolOHLCV` → `{ ohlcv: [...] }`. `getTokenMultiPrices` now returns `{ prices: [{id, chain, price_usd}], missing_tokens: [...] }` — tokens upstream could not price are surfaced in `missing_tokens` instead of being silently dropped.
+- **`rationale` is now required on every read tool** (all tools except `submitFeedback`): a 20-500 char string explaining why the call is made. The self-host build accepts it to satisfy the schema and does not persist it (no analytics sink). `submitFeedback` is the one tool with no `rationale` field — its `goal`/`expected`/`observed` fields serve that purpose.
+- **Minimum SDK bump**: `@modelcontextprotocol/sdk` is now `^1.29.0` (was `^1.4.1`). Tools migrated from the deprecated `server.tool()` signature to `server.registerTool()` with explicit `inputSchema`/`outputSchema`/`annotations`.
+
+### Added
+
+- **Network synonym resolution at the wire layer** — `eth` → `ethereum`, `matic` → `polygon`, `sol` → `solana`, and 30+ more across 35 canonical networks. The rewrite happens at the single fetch chokepoint, so advertised synonyms now actually resolve instead of 404ing. The same map drives `getCapabilities.network_synonyms`.
+- **Canonical sort aliases** — `sort_dir` (canonical) alongside `sort` (legacy), and `sort_by` (canonical) alongside `order_by` (legacy), on `getNetworkDexes`, `getNetworkPools`, `getDexPools`, `getTokenPools`, `getTopTokens`. The two filter tools (`getNetworkPoolsFilter`, `filterNetworkTokens`) gain the legacy `sort`/`order_by` aliases. Canonical wins when both are supplied; the legacy wire param each tool already used is preserved.
+- **`getTokenPools` aliases** — `inversed` (canonical, alias of legacy `reorder`) and `paired_token_address` (canonical, alias of legacy `address`).
+- **`submitFeedback` tool (17th tool)** — low-friction feedback channel with `goal`/`attempted_tools`/`blocked_at`/`expected`/`observed`/`severity`. The self-host build returns a structured ack (`{ ok: true, tracking_id: null, ... }`) rather than persisting; the hosted worker writes to its analytics DB.
+- **Per-tool output schemas** — every tool advertises an `outputSchema` (permissive `.passthrough()` so extra upstream fields don't break strict validators like Cursor / Claude Desktop).
+- **Server `instructions`** — onboarding notes (rationale convention, parameter naming, time formats, output shape) advertised once per session via the initialize result.
+
+### Changed
+
+- `getCapabilities` is now a lean, local-only doc matching the worker: top-level `name`/`aliases`/`server`/`tools_count: 17`/`stats` (35 networks, ~29M tokens, ~31M pools, free, no API key)/`network_synonyms`/`workflows`/`common_pitfalls`/`documentation`/`agent_skills`. The previous sprawling capabilities object (validation rules, rate limits, parameter examples, version history, etc.) was replaced. Stale "33 networks" corrected to 35.
+- `page=0` is coerced to `page=1` in all paginated handlers (1-indexed, backward-compat).
+- The structured error handling (`parseAPIError`) is preserved and still surfaces actionable `code`/`suggestion` payloads.
+
+### Notes
+
+- `filterNetworkTokens` advertises a `results` array in its output schema for parity, but the live API returns its rows under `data` (plus a `query` echo). Both pass through `structuredContent` via the schema's outer passthrough; the documented key is optional so real responses validate.
+
 ## [1.3.0] - 2026-03-19
 
 ### ⚠️ BREAKING CHANGES
