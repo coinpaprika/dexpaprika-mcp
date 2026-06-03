@@ -4,16 +4,17 @@ import { z } from 'zod';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DexPaprika MCP — self-host (stdio) build, contract-aligned 1:1 with the hosted
-// v2.0.0 Cloudflare Worker. Only the transport differs (stdio vs HTTP). Tools,
+// DexPaprika Cloudflare Worker. Only the transport differs (stdio vs HTTP). Tools,
 // params/aliases, synonym resolution, sort normalization, output schemas,
-// instructions and version match the worker.
+// instructions and version match the worker. 18 tools, incl. the advanced
+// cross-network searchPools.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Base URL for DexPaprika API. DexPaprika is fully free: no API key, no auth header.
 const API_BASE_URL = 'https://api.dexpaprika.com';
 
 // Server version — matches the hosted worker.
-const SERVER_VERSION = '2.0.0';
+const SERVER_VERSION = '2.1.0';
 
 // Server identity (inlined from the worker's server-identity.ts).
 const SERVER_CANONICAL_NAME = 'dexpaprika';
@@ -393,6 +394,67 @@ const PriceEntry = z.object({
   price_usd: z.number().nullable().optional().describe('Current USD price; null if not available.'),
 }).passthrough();
 
+// One per-timeframe activity block on a detailed searchPools token
+// (1m/5m/15m/30m/1h/6h/24h). Only present when detailed=true. All fields
+// optional/nullable — upstream omits or nulls them for thin pools (#40 lesson).
+const TokenTimeframe = z.object({
+  volume_usd: z.number().nullable().optional(),
+  buys: z.number().nullable().optional(),
+  sells: z.number().nullable().optional(),
+  txns: z.number().nullable().optional(),
+  last_price_usd_change: z.number().nullable().optional(),
+}).passthrough();
+
+// A token as returned inside searchPools pool rows. With detailed=false the
+// upstream returns only id/chain/has_image; with detailed=true it adds the
+// full token metadata, fdv, and the per-timeframe blocks. Every field optional
+// so both shapes validate against the same schema.
+const SearchPoolToken = z.object({
+  id: z.string().optional().describe('Token contract address (chain-canonical form).'),
+  chain: z.string().optional(),
+  has_image: z.boolean().optional(),
+  name: z.string().optional(),
+  symbol: z.string().optional(),
+  status: z.string().optional(),
+  decimals: z.number().optional(),
+  total_supply: z.union([z.number(), z.string()]).nullable().optional().describe('Raw on-chain total supply; may be a string for 18+ decimal tokens that overflow JS Number.'),
+  description: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  added_at: z.string().optional(),
+  fdv: z.number().nullable().optional().describe('Fully-diluted valuation in USD. Present only when detailed=true.'),
+  '1m': TokenTimeframe.optional(),
+  '5m': TokenTimeframe.optional(),
+  '15m': TokenTimeframe.optional(),
+  '30m': TokenTimeframe.optional(),
+  '1h': TokenTimeframe.optional(),
+  '6h': TokenTimeframe.optional(),
+  '24h': TokenTimeframe.optional(),
+}).passthrough();
+
+// A single pool row from searchPools (/frontend/v1/pools and the per-network
+// variant). All fields optional/nullable — upstream returns different subsets
+// depending on the pool and the `detailed` flag (the #40 lesson: never assume
+// a field is present).
+const PoolRow = z.object({
+  id: z.string().optional().describe('Pool contract address.'),
+  dex_id: z.string().optional().describe("DEX slug (e.g. 'uniswap_v3')."),
+  dex_name: z.string().optional().describe('Human-readable DEX name.'),
+  chain: z.string().optional().describe("Network slug (e.g. 'ethereum')."),
+  fee: z.number().nullable().optional().describe("Pool fee; null for DEXes that don't report one."),
+  created_at: z.string().optional().describe('ISO 8601 pool-creation timestamp.'),
+  created_at_block_number: z.number().nullable().optional(),
+  price_usd: z.number().nullable().optional(),
+  transactions_24h: z.number().nullable().optional(),
+  volume_usd_24h: z.number().nullable().optional(),
+  volume_usd_7d: z.number().nullable().optional(),
+  volume_usd_30d: z.number().nullable().optional(),
+  liquidity_usd: z.number().nullable().optional(),
+  price_change_percentage_5m: z.number().nullable().optional(),
+  price_change_percentage_1h: z.number().nullable().optional(),
+  price_change_percentage_24h: z.number().nullable().optional(),
+  tokens: z.array(SearchPoolToken).optional(),
+}).passthrough();
+
 // Per-tool output schema RAW SHAPES (Record<string, ZodTypeAny>). Wrapped in
 // z.object(shape).passthrough() at registration so the outer level also allows
 // extra fields (additionalProperties:true), matching the worker.
@@ -440,6 +502,15 @@ const OUTPUT_SCHEMAS = {
   getDexPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
   getNetworkPoolsFilter: { results: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
   getTokenPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
+
+  // Advanced pool search (cursor-paginated, cross-network or per-network).
+  searchPools: {
+    results: z.array(PoolRow).optional().describe('Matching pools, ranked by the requested sort_by/sort_dir.'),
+    has_next_page: z.boolean().optional().describe('True when more results exist beyond this page; pass next_cursor to fetch them.'),
+    next_cursor: z.string().nullable().optional().describe('Opaque cursor for the next page. Null/absent on the final page.'),
+    query: z.record(z.string(), z.unknown()).optional().describe('Echo of the effective wire query (note: uses wire names order_by/sort, not the canonical sort_by/sort_dir you passed).'),
+  },
+
   getTopTokens: { tokens: z.array(TokenSummary).optional(), page_info: PageInfo.optional() },
   filterNetworkTokens: { results: z.array(TokenSummary).optional(), page_info: PageInfo.optional() },
 
@@ -510,8 +581,8 @@ function buildCapabilitiesDocument() {
   return {
     name: SERVER_CANONICAL_NAME,
     aliases: SERVER_ALIASES,
-    server: { name: 'DexPaprika MCP', version: '2.0.0' },
-    tools_count: 17,
+    server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
+    tools_count: 18,
     stats: {
       networks: 35,
       tokens_approx: 29_000_000,
@@ -524,6 +595,11 @@ function buildCapabilitiesDocument() {
       discover_networks: ['getNetworks'],
       find_pools_on_network: ['getNetworks', 'getNetworkPools'],
       filter_pools_by_volume: ['getNetworks', 'getNetworkPoolsFilter'],
+      search_pools_across_networks: [
+        'searchPools (omit network for cross-network, or pass network to scope)',
+        'sort_by + filters (volume/liquidity/txns/price/price_change/dex_name/created)',
+        'page via cursor=next_cursor while has_next_page is true',
+      ],
       find_new_pools: [
         'getNetworkPoolsFilter with created_after',
         'sort_by=created_at sort_dir=desc',
@@ -537,7 +613,8 @@ function buildCapabilitiesDocument() {
       cross_network_search: ['search with token name/symbol/address'],
     },
     common_pitfalls: [
-      '/pools (global) returns 410 Gone — use /networks/{network}/pools instead',
+      'The legacy bare /pools endpoint returns 410 Gone. For per-network top pools use getNetworkPools; for cross-network discovery/filtering use searchPools (omit network).',
+      'searchPools is cursor-paginated (use next_cursor), NOT page-based — page params don\'t apply. It surfaces canonical sort_by/sort_dir; the query echo shows the translated wire names order_by/sort.',
       'getTokenMultiPrices is capped at 10 tokens per request',
       'getPoolTransactions from/to are UNIX timestamps; results always capped to last 7 days',
       "Token addresses must match the network (e.g., don't send a Solana address to ethereum queries)",
@@ -738,6 +815,100 @@ registerReadTool(
         if (args[k] !== undefined) endpoint += `&${k}=${args[k]}`;
       }
       return jsonText(await fetchFromAPI(endpoint));
+    } catch (error) {
+      return errorText(error);
+    }
+  },
+);
+
+// ─── searchPools ─────────────────────────────────────────────────────────────
+// Wire enum for the searchPools sort field. Surfaced as canonical `sort_by`,
+// translated to the upstream `order_by` query param. Default volume_usd_24h
+// matches the live API default.
+const SEARCH_POOLS_SORT_FIELDS = [
+  'volume_usd_24h',
+  'volume_usd_7d',
+  'volume_usd_30d',
+  'liquidity_usd',
+  'txns_24h',
+  'price_usd',
+  'price_change_percentage_24h',
+  'created_at',
+];
+
+// Numeric range + string filters that pass through to the wire unchanged. Same
+// names on our surface and on the API, so a single loop forwards them.
+const SEARCH_POOLS_PASSTHROUGH_FILTERS = [
+  'volume_24h_min',
+  'volume_24h_max',
+  'volume_7d_min',
+  'volume_7d_max',
+  'liquidity_usd_min',
+  'liquidity_usd_max',
+  'txns_24h_min',
+  'price_usd_min',
+  'price_usd_max',
+  'price_change_percentage_24h_min',
+  'price_change_percentage_24h_max',
+  'dex_name',
+  'created_after',
+  'created_before',
+];
+
+registerReadTool(
+  'searchPools',
+  'Advanced pool search across ALL networks (omit `network`) or scoped to one network (pass `network`). Ranks and filters pools by volume, liquidity, transactions, price, price change, DEX, and creation time, with cursor-based pagination. Unlike getNetworkPoolsFilter (single network, page-based), this is the cross-network discovery entry point. Surface CANONICAL sort params sort_by/sort_dir — they are translated to the wire automatically. Use `cursor` from the previous response\'s `next_cursor` to page; check `has_next_page`. Set `detailed=true` to enrich each token with fdv plus per-timeframe (1m/5m/15m/30m/1h/6h/24h) volume/txn blocks. REQUIRED: none. OPTIONAL: network, sort_by, sort_dir, limit, cursor, detailed, and the volume/liquidity/txns/price/price-change/dex/created filters.',
+  {
+    network: z.string().optional().describe("OPTIONAL: Network ID from getNetworks (e.g., 'ethereum', 'solana'). Omit to search across ALL networks. Accepts synonyms (e.g. 'eth') — normalized server-side."),
+    sort_by: z.enum(SEARCH_POOLS_SORT_FIELDS).optional().describe("OPTIONAL: Ranking field. Canonical parameter name; translated to the wire's `order_by`. Defaults to 'volume_usd_24h' if neither sort_by nor order_by is provided."),
+    order_by: z.enum(SEARCH_POOLS_SORT_FIELDS).optional().describe('DEPRECATED alias for sort_by. Both accepted; prefer sort_by going forward.'),
+    sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL: Sort direction (asc/desc). Canonical parameter name; translated to the wire's `sort`. Defaults to 'desc' if neither sort_dir nor sort is provided."),
+    sort: z.enum(['asc', 'desc']).optional().describe('DEPRECATED alias for sort_dir. Both accepted; prefer sort_dir going forward.'),
+    limit: z.number().optional().default(10).describe('OPTIONAL: Number of pools per page (default: 10, max: 100).'),
+    cursor: z.string().optional().describe('OPTIONAL: Opaque pagination cursor. Pass the `next_cursor` from a previous response to fetch the next page. Page-based params do NOT apply here — pagination is cursor-only.'),
+    detailed: z.boolean().optional().describe('OPTIONAL: When true, each token in `tokens[]` carries fdv plus per-timeframe blocks (1m/5m/15m/30m/1h/6h/24h) of volume/buys/sells/txns. When false (default), tokens carry only id/chain/has_image to keep payloads small.'),
+    volume_24h_min: z.number().optional().describe('OPTIONAL: Minimum 24h volume in USD.'),
+    volume_24h_max: z.number().optional().describe('OPTIONAL: Maximum 24h volume in USD.'),
+    volume_7d_min: z.number().optional().describe('OPTIONAL: Minimum 7d volume in USD.'),
+    volume_7d_max: z.number().optional().describe('OPTIONAL: Maximum 7d volume in USD.'),
+    liquidity_usd_min: z.number().optional().describe('OPTIONAL: Minimum pool liquidity in USD.'),
+    liquidity_usd_max: z.number().optional().describe('OPTIONAL: Maximum pool liquidity in USD.'),
+    txns_24h_min: z.number().optional().describe('OPTIONAL: Minimum transactions in the last 24h.'),
+    price_usd_min: z.number().optional().describe('OPTIONAL: Minimum pool price in USD.'),
+    price_usd_max: z.number().optional().describe('OPTIONAL: Maximum pool price in USD.'),
+    price_change_percentage_24h_min: z.number().optional().describe('OPTIONAL: Minimum 24h price change percentage (e.g. 5 for +5%).'),
+    price_change_percentage_24h_max: z.number().optional().describe('OPTIONAL: Maximum 24h price change percentage.'),
+    dex_name: z.string().optional().describe("OPTIONAL: Filter to a single DEX slug (e.g. 'uniswap_v3', 'pancakeswap_v3')."),
+    created_after: z.string().optional().describe("OPTIONAL: Only pools created at/after this time. RFC3339 timestamp (e.g. '2024-01-01T00:00:00Z')."),
+    created_before: z.string().optional().describe('OPTIONAL: Only pools created at/before this time. RFC3339 timestamp.'),
+  },
+  async (args) => {
+    try {
+      const { network, limit, cursor, detailed } = args;
+      // Translate canonical -> wire: sort_by -> order_by, sort_dir -> sort.
+      // Surface stays canonical; the raw wire names are never exposed.
+      const order_by = args.sort_by ?? args.order_by ?? 'volume_usd_24h';
+      const sort = args.sort_dir ?? args.sort ?? 'desc';
+
+      const params = new URLSearchParams();
+      params.set('limit', String(limit ?? 10));
+      params.set('order_by', order_by);
+      params.set('sort', sort);
+      if (cursor) params.set('cursor', cursor);
+      if (detailed !== undefined) params.set('detailed', String(detailed));
+      for (const k of SEARCH_POOLS_PASSTHROUGH_FILTERS) {
+        const v = args[k];
+        if (v !== undefined) params.set(k, String(v));
+      }
+
+      // Global (no network) hits /frontend/v1/pools; per-network hits
+      // /frontend/v1/networks/{network}/pools. normalizeNetworkPath only rewrites
+      // paths starting with `/networks/`, so normalize the slug here to keep the
+      // getCapabilities synonym promise on this path too.
+      const base = network
+        ? `/frontend/v1/networks/${normalizeNetwork(network)}/pools`
+        : '/frontend/v1/pools';
+      return jsonText(await fetchFromAPI(`${base}?${params.toString()}`));
     } catch (error) {
       return errorText(error);
     }
@@ -1060,7 +1231,7 @@ async function main() {
   try {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('DexPaprika MCP server (v2.0.0) is running...');
+    console.error(`DexPaprika MCP server (v${SERVER_VERSION}) is running...`);
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

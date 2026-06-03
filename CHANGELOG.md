@@ -2,6 +2,22 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.1.0] - 2026-06-03
+
+Mirrors the hosted worker's new `searchPools` advanced pool-search tool into the self-host build, 1:1. The package now exposes 18 tools.
+
+### Added
+
+- **`searchPools` tool (18th tool)** — advanced pool search across ALL networks (omit `network`) or scoped to a single network (pass `network`). Backs the live `/frontend/v1/pools` (global) and `/frontend/v1/networks/{network}/pools` (per-network) endpoints. Ranks and filters pools by volume, liquidity, transactions, price, price change, DEX, and creation time, with cursor-based pagination.
+  - Surfaces **canonical** sort params `sort_by` / `sort_dir` and translates them to the wire's `order_by` / `sort` — the raw wire names are never exposed (the deprecated `order_by` / `sort` aliases are still accepted). Default ranking is `volume_usd_24h` / `desc`.
+  - Filters (all optional, same names on the wire): `volume_24h_min`/`max`, `volume_7d_min`/`max`, `liquidity_usd_min`/`max`, `txns_24h_min`, `price_usd_min`/`max`, `price_change_percentage_24h_min`/`max`, `dex_name`, `created_after`/`before`.
+  - **Cursor pagination** (not page-based): pass `cursor` = the previous response's `next_cursor` while `has_next_page` is true. `detailed=true` enriches each token with `fdv` plus per-timeframe (1m/5m/15m/30m/1h/6h/24h) volume/txn blocks.
+  - Returns `{ results, has_next_page, next_cursor, query }` in both `content[0].text` and validated `structuredContent`. The `query` echo uses the wire names `order_by`/`sort`. Output schema fields are optional/nullable so thin pools and either `detailed` shape validate cleanly.
+
+### Changed
+
+- `getCapabilities` now reports `tools_count: 18`, adds the `search_pools_across_networks` workflow, and updates the pool-discovery pitfalls (the legacy bare `/pools` 410 note now points to `searchPools` for cross-network discovery, plus a cursor-vs-page reminder).
+
 ## [2.0.0] - 2026-06-03
 
 Full 1:1 contract parity with the hosted DexPaprika MCP worker (`mcp.dexpaprika.com`) v2.0.0. Only the transport differs (stdio vs HTTP); tools, parameters, aliases, synonym resolution, sort normalization, output schemas, server instructions and version now match the worker.

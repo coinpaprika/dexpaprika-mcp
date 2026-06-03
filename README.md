@@ -107,7 +107,7 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 }
 ```
 
-## Available Tools (14)
+## Available Tools (18)
 
 ### Discovery
 
@@ -130,7 +130,8 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 |------|-------------|---------------------|
 | `getNetworkPools` | **PRIMARY** — Get top liquidity pools on a network | `network` |
 | `getDexPools` | Get pools from a specific DEX | `network`, `dex` |
-| `getNetworkPoolsFilter` | Filter pools by volume, transactions, creation time | `network` |
+| `getNetworkPoolsFilter` | Filter pools by volume, transactions, creation time (single network, page-based) | `network` |
+| `searchPools` | **ADVANCED** — Cross-network (or per-network) pool search ranked/filtered by volume, liquidity, txns, price, price change, DEX, creation time. Cursor-paginated; canonical `sort_by`/`sort_dir`. | none |
 | `getPoolDetails` | Detailed pool info (price, volume, TVL, tokens) | `network`, `pool_address` |
 | `getPoolOHLCV` | Historical OHLCV candle data | `network`, `pool_address`, `start` |
 | `getPoolTransactions` | Recent transactions/trades for a pool | `network`, `pool_address` |
