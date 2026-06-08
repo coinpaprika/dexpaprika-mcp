@@ -28,6 +28,14 @@
   ],
   "author": "",
   "license": "MIT",
+  "homepage": "https://github.com/coinpaprika/dexpaprika-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coinpaprika/dexpaprika-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/coinpaprika/dexpaprika-mcp/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "node-fetch": "^3.3.2",
