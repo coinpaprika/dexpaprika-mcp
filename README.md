@@ -163,10 +163,10 @@ const jupiterPools = await getTokenPools({
   limit: 5
 });
 
-// Get top pools on Ethereum:
+// Get top pools on Ethereum (returns `results` with cursor pagination):
 const ethereumPools = await getNetworkPools({
   network: "ethereum",
-  order_by: "volume_usd",
+  order_by: "volume_usd_24h",
   limit: 10
 });
 
@@ -175,7 +175,7 @@ const filteredPools = await getNetworkPoolsFilter({
   network: "ethereum",
   volume_24h_min: 100000,
   created_after: 1710806400,
-  sort_by: "volume_24h",
+  sort_by: "volume_usd_24h",
   limit: 20
 });
 

@@ -2,6 +2,21 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.1.0] - 2026-06-30
+
+Migrate the pool and token list/filter tools to the unified search endpoints. DexPaprika removed `/networks/{network}/pools`, `/networks/{network}/pools/filter`, `/networks/{network}/tokens/top`, and `/networks/{network}/tokens/filter` (HTTP 410), so `getNetworkPools`, `getNetworkPoolsFilter`, `getTopTokens`, and `filterNetworkTokens` were erroring until this release.
+
+### Breaking changes
+
+- **`getNetworkPools`, `getNetworkPoolsFilter`, `getTopTokens`, and `filterNetworkTokens` now return rows under `results`** (was `pools` / `tokens` / `data`) with cursor pagination (`has_next_page` + `next_cursor`) instead of `page_info` and page numbers. The `page` parameter is replaced by `cursor`. Rows use the canonical field names (`volume_usd_24h`, `txns_24h`, `liquidity_usd`, `fdv_usd`, `price_change_percentage_24h`). This mirrors the upstream API change and is unavoidable.
+- **`getTopTokens` no longer supports ordering by price**: the search endpoint rejects it, so a supplied `price_usd` falls back to `volume_usd_24h`.
+
+### Changed
+
+- `getNetworkPools` and `getNetworkPoolsFilter` now proxy `/networks/{network}/pools/search`; `getTopTokens` and `filterNetworkTokens` proxy `/networks/{network}/tokens/search`. Tool names are unchanged for client back-compat.
+- Legacy sort-field values (`volume_usd`, `transactions`, `last_price_change_usd_24h`, `volume_24h`, `liquidity`, ...) and legacy filter param names (`volume_24h_min` → `volume_usd_24h_min`, ...) are auto-mapped to the canonical search names, so existing callers keep working. A shared `src/search-mapping.js` does the normalization.
+- Output schemas and the README examples updated to the search response shape.
+
 ## [2.0.0] - 2026-06-03
 
 Full 1:1 contract parity with the hosted DexPaprika MCP worker (`mcp.dexpaprika.com`) v2.0.0. Only the transport differs (stdio vs HTTP); tools, parameters, aliases, synonym resolution, sort normalization, output schemas, server instructions and version now match the worker.
