@@ -1,6 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
+
+// Sort-field values accepted by the pool/token tools. Canonical *_24h names are
+// what /pools/search and /tokens/search use; the trailing short names are legacy
+// aliases kept for back-compat and normalized in search-mapping.js.
+const POOL_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'price_usd', 'price_change_percentage_24h', 'volume_usd', 'transactions', 'last_price_change_usd_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'liquidity'];
+const TOKEN_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'fdv_usd', 'created_at', 'price_change_percentage_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'txns', 'price_change', 'fdv', 'price_usd'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DexPaprika MCP — self-host (stdio) build, contract-aligned 1:1 with the hosted
@@ -425,10 +432,12 @@ const OUTPUT_SCHEMAS = {
   // NOTE: the array/page_info keys below are marked .optional() so SDK 1.29's
   // strict structuredContent validation accepts real upstream shapes. The outer
   // schema is .passthrough(), so the documented key (e.g. `results`) is advertised
-  // while alternate upstream keys still validate. filterNetworkTokens is the key
-  // case: the live API returns `{ data, page_info, query }`, not `{ results }`,
-  // so a required `results` would reject every response. Same defensive reasoning
-  // for the rest — upstream key presence varies and must not hard-fail the client.
+  // while alternate upstream keys still validate. getNetworkPools,
+  // getNetworkPoolsFilter, getTopTokens, and filterNetworkTokens proxy the
+  // /pools/search and /tokens/search endpoints: they return rows under `results`
+  // with cursor pagination (has_next_page + next_cursor), not pools/tokens/data
+  // + page_info. Keeping every key optional keeps the client robust to upstream
+  // shape drift.
   search: {
     tokens: z.array(TokenSummary).optional(),
     pools: z.array(PoolSummary).optional(),
@@ -436,12 +445,12 @@ const OUTPUT_SCHEMAS = {
   },
 
   getNetworkDexes: { dexes: z.array(DexSummary).optional(), page_info: PageInfo.optional() },
-  getNetworkPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
   getDexPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
-  getNetworkPoolsFilter: { results: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
   getTokenPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
-  getTopTokens: { tokens: z.array(TokenSummary).optional(), page_info: PageInfo.optional() },
-  filterNetworkTokens: { results: z.array(TokenSummary).optional(), page_info: PageInfo.optional() },
+  getNetworkPools: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
+  getNetworkPoolsFilter: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
+  getTopTokens: { results: z.array(TokenSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
+  filterNetworkTokens: { results: z.array(TokenSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
 
   getPoolDetails: {
     id: z.string().optional(),
@@ -650,24 +659,20 @@ registerReadTool(
 // ─── getNetworkPools ─────────────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPools',
-  'PRIMARY POOL FUNCTION: get top liquidity pools on a network. REQUIRED: network. OPTIONAL: page, limit, sort_dir/sort, sort_by/order_by.',
+  'PRIMARY POOL FUNCTION: get top liquidity pools on a network. Proxies /networks/{network}/pools/search: rows are returned under `results` with cursor pagination (has_next_page + next_cursor). REQUIRED: network. OPTIONAL: limit, cursor, sort_dir/sort, sort_by/order_by.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
     limit: z.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
-    sort_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd')"),
-    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted."),
+    order_by: z.enum(POOL_SORT_FIELDS).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
   },
   async (args) => {
     try {
       const { network } = args;
-      const page = coercePage(args.page);
-      const limit = args.limit ?? 10;
-      const direction = args.sort_dir ?? args.sort ?? 'desc';
-      const field = args.sort_by ?? args.order_by ?? 'volume_usd';
-      const endpoint = `/networks/${network}/pools?page=${page}&limit=${limit}&sort=${direction}&order_by=${field}`;
+      const endpoint = `/networks/${network}/pools/search${toQueryString(buildPoolSearchParams(args))}`;
       return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
       return errorText(error);
@@ -707,11 +712,11 @@ registerReadTool(
 // ─── getNetworkPoolsFilter ───────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPoolsFilter',
-  'Filter pools by volume, liquidity, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after, created_before, sort_by/order_by, sort_dir/sort.',
+  'Filter pools by volume, liquidity, transactions, and creation time. Proxies /networks/{network}/pools/search with filter params; rows are returned under `results` with cursor pagination. REQUIRED: network. OPTIONAL: limit, cursor, volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after, created_before, sort_by/order_by, sort_dir/sort.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
     limit: z.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
     volume_24h_min: z.number().optional().describe('OPTIONAL: Minimum 24h volume in USD'),
     volume_24h_max: z.number().optional().describe('OPTIONAL: Maximum 24h volume in USD'),
     volume_7d_min: z.number().optional().describe('OPTIONAL: Minimum 7d volume in USD'),
@@ -721,22 +726,15 @@ registerReadTool(
     txns_24h_min: z.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
     created_after: z.number().optional().describe('OPTIONAL: Only pools created after this UNIX timestamp'),
     created_before: z.number().optional().describe('OPTIONAL: Only pools created before this UNIX timestamp'),
-    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity', 'txns_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_24h')"),
-    order_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity', 'txns_24h', 'created_at']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted."),
+    order_by: z.enum(POOL_SORT_FIELDS).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
   },
   async (args) => {
     try {
       const { network } = args;
-      const page = coercePage(args.page);
-      const limit = args.limit ?? 50;
-      const sort_by = args.sort_by ?? args.order_by ?? 'volume_24h';
-      const sort_dir = args.sort_dir ?? args.sort ?? 'desc';
-      let endpoint = `/networks/${network}/pools/filter?page=${page}&limit=${limit}&sort_by=${sort_by}&sort_dir=${sort_dir}`;
-      for (const k of ['volume_24h_min', 'volume_24h_max', 'volume_7d_min', 'volume_7d_max', 'liquidity_usd_min', 'liquidity_usd_max', 'txns_24h_min', 'created_after', 'created_before']) {
-        if (args[k] !== undefined) endpoint += `&${k}=${args[k]}`;
-      }
+      const endpoint = `/networks/${network}/pools/search${toQueryString(buildPoolSearchParams(args))}`;
       return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
       return errorText(error);
@@ -910,35 +908,29 @@ registerReadTool(
 // ─── filterNetworkTokens ─────────────────────────────────────────────────────
 registerReadTool(
   'filterNetworkTokens',
-  'Filter tokens by volume, liquidity, FDV, transactions, and creation time. REQUIRED: network. OPTIONAL: page, limit, volume_24h_min/max, liquidity_usd_min, fdv_min/max, txns_24h_min, created_after/before, sort_by/order_by, sort_dir/sort.',
+  'Filter tokens by volume, liquidity, FDV, transactions, and creation time. Proxies /networks/{network}/tokens/search with filter params; rows are returned under `results` with cursor pagination. REQUIRED: network. OPTIONAL: limit, cursor, volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, created_after/before, sort_by/order_by, sort_dir/sort.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
     limit: z.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
     volume_24h_min: z.number().optional().describe('OPTIONAL: Minimum 24h volume in USD'),
     volume_24h_max: z.number().optional().describe('OPTIONAL: Maximum 24h volume in USD'),
     liquidity_usd_min: z.number().optional().describe('OPTIONAL: Minimum token liquidity in USD'),
+    liquidity_usd_max: z.number().optional().describe('OPTIONAL: Maximum token liquidity in USD'),
     fdv_min: z.number().optional().describe('OPTIONAL: Minimum fully diluted valuation in USD'),
     fdv_max: z.number().optional().describe('OPTIONAL: Maximum fully diluted valuation in USD'),
     txns_24h_min: z.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
     created_after: z.number().optional().describe('OPTIONAL: Only tokens created after this UNIX timestamp'),
     created_before: z.number().optional().describe('OPTIONAL: Only tokens created before this UNIX timestamp'),
-    sort_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'fdv']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_24h')"),
-    order_by: z.enum(['volume_24h', 'volume_7d', 'volume_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'fdv']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    sort_by: z.enum(TOKEN_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical names; short legacy names are still accepted."),
+    order_by: z.enum(TOKEN_SORT_FIELDS).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
   },
   async (args) => {
     try {
       const { network } = args;
-      const page = coercePage(args.page);
-      const limit = args.limit ?? 50;
-      const sort_by = args.sort_by ?? args.order_by ?? 'volume_24h';
-      const sort_dir = args.sort_dir ?? args.sort ?? 'desc';
-      let endpoint = `/networks/${network}/tokens/filter?page=${page}&limit=${limit}&sort_by=${sort_by}&sort_dir=${sort_dir}`;
-      for (const k of ['volume_24h_min', 'volume_24h_max', 'liquidity_usd_min', 'fdv_min', 'fdv_max', 'txns_24h_min', 'created_after', 'created_before']) {
-        if (args[k] !== undefined) endpoint += `&${k}=${args[k]}`;
-      }
+      const endpoint = `/networks/${network}/tokens/search${toQueryString(buildTokenSearchParams(args))}`;
       return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
       return errorText(error);
@@ -949,24 +941,20 @@ registerReadTool(
 // ─── getTopTokens ────────────────────────────────────────────────────────────
 registerReadTool(
   'getTopTokens',
-  'Get top tokens on a network ranked by volume, price, liquidity, or activity. Each token includes enriched metadata and multi-timeframe metrics (24h, 1h, 5m). REQUIRED: network. OPTIONAL: page, limit, sort_by/order_by, sort_dir/sort.',
+  'Get top tokens on a network ranked by volume, liquidity, transactions, FDV, or 24h price change. Proxies /networks/{network}/tokens/search: rows are returned under `results` (address, price_usd, volume_usd_24h, liquidity_usd, fdv_usd, txns_24h, price_change_percentage_24h) with cursor pagination. Ordering by price is not supported and falls back to volume. REQUIRED: network. OPTIONAL: limit, cursor, sort_by/order_by, sort_dir/sort.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
     limit: z.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
-    sort_by: z.enum(['volume_24h', 'price_usd', 'liquidity_usd', 'txns', 'price_change']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_24h')"),
-    order_by: z.enum(['volume_24h', 'price_usd', 'liquidity_usd', 'txns', 'price_change']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
+    sort_by: z.enum(TOKEN_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical names; short legacy names are still accepted."),
+    order_by: z.enum(TOKEN_SORT_FIELDS).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
   },
   async (args) => {
     try {
       const { network } = args;
-      const page = coercePage(args.page);
-      const limit = args.limit ?? 50;
-      const direction = args.sort_dir ?? args.sort ?? 'desc';
-      const field = args.sort_by ?? args.order_by ?? 'volume_24h';
-      const endpoint = `/networks/${network}/tokens/top?page=${page}&limit=${limit}&order_by=${field}&sort=${direction}`;
+      const endpoint = `/networks/${network}/tokens/search${toQueryString(buildTokenSearchParams(args))}`;
       return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
       return errorText(error);
