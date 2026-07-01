@@ -126,7 +126,46 @@ function buildErrorResponse(code, message, retryable, suggestion, correctedExamp
   return error;
 }
 
-function parseAPIError(status, statusText, endpoint) {
+// Defensively parse a deprecation hint out of an error response body. The API
+// signals a removed/moved endpoint with a JSON body of the shape
+// { "code": 410, "message": "endpoint removed", "replacement": "/networks/:network/pools/search" }.
+// We key on the presence of a string "replacement" field so ANY future
+// deprecation self-documents (not just 410, not hardcoded to any endpoint).
+// Returns null when the body is missing, not JSON, or has no usable replacement,
+// so callers fall back to the existing status-based error behavior.
+function parseDeprecationHint(body) {
+  if (!body || typeof body !== 'string') return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const replacement = parsed.replacement;
+  if (typeof replacement !== 'string' || replacement.length === 0) return null;
+  const apiMessage = typeof parsed.message === 'string' ? parsed.message : null;
+  return { replacement, apiMessage };
+}
+
+function parseAPIError(status, statusText, endpoint, body) {
+  // Generic, self-documenting deprecation handling: if the error body carries a
+  // "replacement" hint, surface BOTH the API message and the replacement path,
+  // for ANY error status. Keeps the DP<status>_ERROR code structure.
+  const hint = parseDeprecationHint(body);
+  if (hint) {
+    const baseMessage = (hint.apiMessage ?? `API request failed: ${status} ${statusText}`)
+      .replace(/\s*\.?\s*$/, '');
+    return buildErrorResponse(
+      `DP${status}_ERROR`,
+      `${baseMessage}. Use ${hint.replacement} instead.`,
+      false,
+      `This endpoint has been deprecated or removed. Use ${hint.replacement} instead.`,
+      undefined,
+      { endpoint, status, replacement: hint.replacement },
+    );
+  }
+
   if (status === 404 && endpoint.includes('/networks/')) {
     const networkMatch = endpoint.match(/\/networks\/([^/?]+)/);
     const providedNetwork = networkMatch ? networkMatch[1] : 'unknown';
@@ -204,9 +243,18 @@ async function fetchFromAPI(endpoint) {
   const url = `${API_BASE_URL}${endpoint}`;
   const response = await fetch(url);
   if (!response.ok) {
+    // Read the error body so a deprecation hint (a "replacement" field) can be
+    // surfaced to the caller. Defensive: the body may be empty or non-JSON, in
+    // which case parseAPIError falls back to status-based behavior.
+    let body = '';
+    try {
+      body = await response.text();
+    } catch {
+      body = '';
+    }
     console.error(`[upstream] url=${url} http_status=${response.status} text="${response.statusText}"`);
     // Preserve the package's structured error contract.
-    throw parseAPIError(response.status, response.statusText, endpoint);
+    throw parseAPIError(response.status, response.statusText, endpoint, body);
   }
   return response.json();
 }

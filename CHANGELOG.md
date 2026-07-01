@@ -2,6 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.1.1] - 2026-07-01
+
+### Added
+- **Deprecation-aware errors**: when the API returns an error whose body carries a `replacement` field, the error now includes the API's message plus `Use <replacement> instead.` and a `metadata.replacement`, so agents are pointed at the new endpoint instead of a bare status line. Generic across any error status, not hardcoded to specific endpoints.
+
 ## [2.1.0] - 2026-06-30
 
 Migrate the pool and token list/filter tools to the unified search endpoints. DexPaprika removed `/networks/{network}/pools`, `/networks/{network}/pools/filter`, `/networks/{network}/tokens/top`, and `/networks/{network}/tokens/filter` (HTTP 410), so `getNetworkPools`, `getNetworkPoolsFilter`, `getTopTokens`, and `filterNetworkTokens` were erroring until this release.
