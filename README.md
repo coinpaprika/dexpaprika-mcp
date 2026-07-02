@@ -12,7 +12,7 @@ npm install -g dexpaprika-mcp
 dexpaprika-mcp
 
 # Or run directly without installation
-npx dexpaprika-mcp
+npx dexpaprika-mcp@latest
 ```
 
 DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No API keys required. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
@@ -76,7 +76,7 @@ Add the following to your Claude Desktop configuration file:
   "mcpServers": {
     "dexpaprika": {
       "command": "npx",
-      "args": ["dexpaprika-mcp"]
+      "args": ["dexpaprika-mcp@latest"]
     }
   }
 }
