@@ -1,7 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { createRequire } from 'module';
 import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
+
+const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
 
 // Sort-field values accepted by the pool/token tools. Canonical *_24h names are
 // what /pools/search and /tokens/search use; the trailing short names are legacy
@@ -567,7 +570,7 @@ function buildCapabilitiesDocument() {
   return {
     name: SERVER_CANONICAL_NAME,
     aliases: SERVER_ALIASES,
-    server: { name: 'DexPaprika MCP', version: '2.0.0' },
+    server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
     tools_count: 17,
     stats: {
       networks: 35,
@@ -1096,7 +1099,7 @@ async function main() {
   try {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('DexPaprika MCP server (v2.0.0) is running...');
+    console.error(`DexPaprika MCP server v${PACKAGE_VERSION} (tool contract v${SERVER_VERSION}) is running...`);
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
