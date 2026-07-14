@@ -2,6 +2,13 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.1.2] - 2026-07-14
+
+### Fixed
+- Startup banner reports the real package version instead of a hardcoded v2.0.0; the hosted tool-contract version is shown separately.
+- `getCapabilities` stats refreshed to live coverage: 36 networks, 33M+ tokens, 36M+ pools.
+- README tool count corrected from 14 to 17; added the missing `getTopTokens`, `filterNetworkTokens`, and `submitFeedback` rows to the tools tables.
+
 ## [2.1.1] - 2026-07-01
 
 ### Added
