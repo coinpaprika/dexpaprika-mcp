@@ -2,6 +2,12 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.1.3] - 2026-07-14
+
+### Fixed
+- **Repackage of 2.1.2, which is broken on npm**: the 2.1.2 tarball was published without the dist/ directory, so its bin target (dist/bin.js) does not exist and fresh `npx dexpaprika-mcp` installs fail or silently fall back to an older binary on PATH. 2.1.2 is deprecated on the registry; no source changes besides packaging.
+- Added a `prepack` hook that runs the build automatically, so any future `npm pack`/`npm publish` always includes dist/.
+
 ## [2.1.2] - 2026-07-14
 
 ### Fixed
