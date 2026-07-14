@@ -114,7 +114,7 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 | Tool | Description |
 |------|-------------|
 | `getCapabilities` | Server capabilities, workflow patterns, network synonyms, and best practices. **Start here.** |
-| `getNetworks` | List all 33 supported blockchain networks |
+| `getNetworks` | List every supported blockchain network (36+) |
 | `getStats` | High-level ecosystem stats (total networks, DEXes, pools, tokens) |
 | `search` | Search tokens, pools, and DEXes across ALL networks by name, symbol, or address |
 

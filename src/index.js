@@ -573,9 +573,9 @@ function buildCapabilitiesDocument() {
     server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
     tools_count: 17,
     stats: {
-      networks: 35,
-      tokens_approx: 29_000_000,
-      pools_approx: 31_000_000,
+      networks: 36,
+      tokens_approx: 33_000_000,
+      pools_approx: 36_000_000,
       free: true,
       requires_api_key: false,
     },
