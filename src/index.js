@@ -118,6 +118,7 @@ const ErrorCodes = {
   DP400_TOO_MANY_TOKENS: 'DP400_TOO_MANY_TOKENS',
   DP400_INVALID_ADDRESS: 'DP400_INVALID_ADDRESS',
   DP400_MISSING_REQUIRED: 'DP400_MISSING_REQUIRED',
+  DP400_UNSUPPORTED_PARAM: 'DP400_UNSUPPORTED_PARAM',
   DP404_NOT_FOUND: 'DP404_NOT_FOUND',
   DP429_RATE_LIMIT: 'DP429_RATE_LIMIT',
 };
@@ -284,9 +285,14 @@ function jsonText(data, structuredKey) {
 function errorText(err) {
   // Structured error objects (from parseAPIError) surface their full payload so
   // agents keep the actionable code/suggestion. Plain errors fall back to message.
+  // isError: true is required: SDK 1.29 validates non-error results against the
+  // tool's outputSchema and rejects any result without structuredContent, so an
+  // error result missing the flag surfaces as an opaque JSON-RPC -32602 instead
+  // of the structured payload below.
   if (err && typeof err === 'object' && 'error' in err) {
     return {
       content: [{ type: 'text', text: JSON.stringify(err, null, 2) }],
+      isError: true,
     };
   }
   return {
@@ -294,6 +300,7 @@ function errorText(err) {
       type: 'text',
       text: `Error: ${err instanceof Error ? err.message : 'Unknown error'}`,
     }],
+    isError: true,
   };
 }
 
@@ -354,9 +361,10 @@ const SERVER_INSTRUCTIONS = [
   '- `sort_dir` (legacy: `sort`) — sort direction, "asc" or "desc".',
   '- `sort_by` (legacy: `order_by`) — sort field, tool-specific enum.',
   '',
-  '`getTokenPools` also accepts:',
-  "- `inversed` (legacy: `reorder`) — flip pool's pair perspective.",
-  '- `paired_token_address` (legacy: `address`) — filter pools that also contain this token.',
+  '`getTokenPools` no longer accepts `inversed`/`reorder` or `paired_token_address`/`address`: the endpoint it',
+  'proxied was removed and its replacement (/networks/{network}/pools/search with token_address) has no equivalent',
+  'for either. Supplying them returns a structured error with a client-side workaround. The token filter is',
+  'network-scoped only; the cross-network /pools/search ignores token_address.',
   '',
   'Pagination is 1-indexed; the server accepts `page=0` as a backward-compat alias for `page=1`.',
   '',
@@ -484,11 +492,11 @@ const OUTPUT_SCHEMAS = {
   // strict structuredContent validation accepts real upstream shapes. The outer
   // schema is .passthrough(), so the documented key (e.g. `results`) is advertised
   // while alternate upstream keys still validate. getNetworkPools,
-  // getNetworkPoolsFilter, getTopTokens, and filterNetworkTokens proxy the
-  // /pools/search and /tokens/search endpoints: they return rows under `results`
-  // with cursor pagination (has_next_page + next_cursor), not pools/tokens/data
-  // + page_info. Keeping every key optional keeps the client robust to upstream
-  // shape drift.
+  // getNetworkPoolsFilter, getTokenPools, getTopTokens, and filterNetworkTokens
+  // proxy the /pools/search and /tokens/search endpoints: they return rows under
+  // `results` with cursor pagination (has_next_page + next_cursor), not
+  // pools/tokens/data + page_info. Keeping every key optional keeps the client
+  // robust to upstream shape drift.
   search: {
     tokens: z.array(TokenSummary).optional(),
     pools: z.array(PoolSummary).optional(),
@@ -497,7 +505,7 @@ const OUTPUT_SCHEMAS = {
 
   getNetworkDexes: { dexes: z.array(DexSummary).optional(), page_info: PageInfo.optional() },
   getDexPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
-  getTokenPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
+  getTokenPools: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
   getNetworkPools: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
   getNetworkPoolsFilter: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
   getTopTokens: { results: z.array(TokenSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
@@ -597,7 +605,9 @@ function buildCapabilitiesDocument() {
       cross_network_search: ['search with token name/symbol/address'],
     },
     common_pitfalls: [
-      '/pools (global) returns 410 Gone — use /networks/{network}/pools instead',
+      '/pools (global) returns 410 Gone: use getNetworkPools, which proxies /networks/{network}/pools/search',
+      'getTokenPools token filtering is network-scoped only: the cross-network /pools/search silently ignores token_address, and an unknown token_address returns empty results, not an error',
+      'getTokenPools no longer supports inversed/reorder or paired_token_address/address (no equivalent on /networks/{network}/pools/search); invert prices client-side and filter results[].tokens for pair queries',
       'getTokenMultiPrices is capped at 10 tokens per request',
       'getPoolTransactions from/to are UNIX timestamps; results always capped to last 7 days',
       "Token addresses must match the network (e.g., don't send a Solana address to ethereum queries)",
@@ -884,35 +894,60 @@ registerReadTool(
 );
 
 // ─── getTokenPools ───────────────────────────────────────────────────────────
+// The upstream /networks/{network}/tokens/{token_address}/pools endpoint was
+// removed (HTTP 410, replacement /networks/:network/pools/search). The pool
+// search endpoint gained a token_address filter, so this tool proxies it via
+// the same search-mapping normalization as getNetworkPools. The old
+// inversed/reorder and paired_token_address/address params have NO equivalent
+// on the new endpoint (spec is final per the API team): the params stay in the
+// schema so existing callers do not fail input validation, but supplying them
+// returns a structured error with a client-side workaround instead of
+// silently returning data that does not match the request.
 registerReadTool(
   'getTokenPools',
-  'Get liquidity pools containing a token. REQUIRED: network, token_address. OPTIONAL: page, limit, sort_dir/sort, sort_by/order_by, inversed/reorder, paired_token_address/address.',
+  'Get liquidity pools containing a token on a network. Proxies /networks/{network}/pools/search with a token_address filter: rows are returned under `results` with cursor pagination (has_next_page + next_cursor). The token filter is network-scoped ONLY; the cross-network /pools/search ignores token_address, so use `search` first if you do not know the network. An unknown token_address returns an empty `results` array, not an error. The legacy inversed/reorder (pair-perspective flip) and paired_token_address/address (second-token pair filter) parameters have no equivalent on the new endpoint and return a structured error if supplied. REQUIRED: network, token_address. OPTIONAL: limit, cursor, sort_dir/sort, sort_by/order_by.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    token_address: z.string().describe('REQUIRED: Token contract address'),
-    page: z.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    token_address: z.string().describe('REQUIRED: Token contract address. Results are restricted to pools on the given network containing this token. Unknown addresses return empty results, not an error.'),
     limit: z.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc')"),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL (deprecated alias of sort_dir): Sort direction'),
-    sort_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd')"),
-    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
-    inversed: z.boolean().optional().describe("OPTIONAL (preferred): Flip the pool's pair perspective so the specified token becomes primary"),
-    reorder: z.boolean().optional().describe('OPTIONAL (deprecated alias of inversed): Reorder the pool'),
-    paired_token_address: z.string().optional().describe('OPTIONAL (preferred): Filter pools that also contain this token address'),
-    address: z.string().optional().describe('OPTIONAL (deprecated alias of paired_token_address): Additional token address filter'),
+    sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted."),
+    order_by: z.enum(POOL_SORT_FIELDS).optional().describe('OPTIONAL (deprecated alias of sort_by): Field to sort by'),
+    inversed: z.boolean().optional().describe('UNSUPPORTED: the replacement endpoint has no pair-perspective flip. Passing true returns a structured error; invert prices client-side (1/price) instead.'),
+    reorder: z.boolean().optional().describe('UNSUPPORTED (deprecated alias of inversed): passing true returns a structured error.'),
+    paired_token_address: z.string().optional().describe('UNSUPPORTED: the replacement endpoint cannot filter by a second token. Passing it returns a structured error; filter results[].tokens client-side for pair queries.'),
+    address: z.string().optional().describe('UNSUPPORTED (deprecated alias of paired_token_address): passing it returns a structured error.'),
   },
   async (args) => {
     try {
-      const { network, token_address } = args;
-      const page = coercePage(args.page);
-      const limit = args.limit ?? 10;
-      const direction = args.sort_dir ?? args.sort ?? 'desc';
-      const field = args.sort_by ?? args.order_by ?? 'volume_usd';
-      const flip = args.inversed ?? args.reorder; // may be undefined
-      const paired = args.paired_token_address ?? args.address; // may be undefined
-      let endpoint = `/networks/${network}/tokens/${token_address}/pools?page=${page}&limit=${limit}&sort=${direction}&order_by=${field}`;
-      if (flip !== undefined) endpoint += `&reorder=${flip}`;
-      if (paired) endpoint += `&address=${encodeURIComponent(paired)}`;
+      const { network } = args;
+      const flip = args.inversed ?? args.reorder;
+      if (flip === true) {
+        return errorText(buildErrorResponse(
+          ErrorCodes.DP400_UNSUPPORTED_PARAM,
+          "'inversed'/'reorder' is no longer supported: the API removed /networks/{network}/tokens/{token_address}/pools and its replacement /networks/{network}/pools/search has no pair-perspective flip",
+          false,
+          "Retry without 'inversed'/'reorder'. Prices come back in the pool's default perspective; compute 1/price client-side if you need the flipped pair.",
+          undefined,
+          { parameter: 'inversed', legacy_alias: 'reorder' },
+        ));
+      }
+      const paired = args.paired_token_address ?? args.address;
+      if (typeof paired === 'string' && paired !== '') {
+        return errorText(buildErrorResponse(
+          ErrorCodes.DP400_UNSUPPORTED_PARAM,
+          "'paired_token_address'/'address' is no longer supported: the replacement /networks/{network}/pools/search accepts a single token_address filter and has no second-token pair filter",
+          false,
+          "Retry with token_address only, then filter results[].tokens client-side for pools that also contain the second token.",
+          undefined,
+          { parameter: 'paired_token_address', legacy_alias: 'address' },
+        ));
+      }
+      // buildPoolSearchParams picks up token_address, limit, cursor, and the
+      // normalized sort params from args.
+      const endpoint = `/networks/${network}/pools/search${toQueryString(buildPoolSearchParams(args))}`;
       return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
       return errorText(error);

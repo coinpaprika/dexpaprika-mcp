@@ -140,7 +140,7 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 | Tool | Description | Required Parameters |
 |------|-------------|---------------------|
 | `getTokenDetails` | Detailed token information | `network`, `token_address` |
-| `getTokenPools` | Liquidity pools containing a token | `network`, `token_address` |
+| `getTokenPools` | Liquidity pools containing a token (network-scoped filter, `results` + cursor pagination) | `network`, `token_address` |
 | `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
 | `getTopTokens` | Top tokens on a network ranked by volume, liquidity, FDV, or 24h price change | `network` |
 | `filterNetworkTokens` | Filter tokens by volume, liquidity, FDV, transactions, and creation time | `network` |
@@ -163,11 +163,12 @@ const solanaJupToken = await getTokenDetails({
   token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 });
 
-// Find all pools for a specific token with volume sorting:
+// Find pools containing a token (returns `results` with cursor pagination;
+// the token filter only works network-scoped):
 const jupiterPools = await getTokenPools({
   network: "solana",
   token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-  order_by: "volume_usd",
+  order_by: "volume_usd_24h",
   limit: 5
 });
 
