@@ -17,6 +17,16 @@
  * Verified live against api.dexpaprika.com (2026-06-30): every canonical value
  * below returns 200 and sorts correctly; the legacy values 400. tokens/search
  * does not support price_usd ordering (400), so it falls back to volume.
+ *
+ * 2026-07-15: /networks/{network}/tokens/{token_address}/pools was removed the
+ * same way (HTTP 410, replacement /networks/:network/pools/search). The pool
+ * search endpoint gained a token_address query param that restricts results to
+ * pools containing that token, so getTokenPools routes through
+ * buildPoolSearchParams too. Two caveats, both verified live (2026-07-15):
+ * the filter is network-scoped only (the cross-network /pools/search accepts
+ * token_address but silently ignores it), and repeating token_address does
+ * not act as a pair filter; the API uses only one of the values (not
+ * guaranteed by order).
  */
 
 const POOL_SORT_CANONICAL = new Set([
@@ -100,6 +110,9 @@ export function buildPoolSearchParams(args) {
   };
   if (args.limit !== undefined && args.limit !== null) params.limit = args.limit;
   if (typeof args.cursor === 'string' && args.cursor !== '') params.cursor = args.cursor;
+  // token_address restricts results to pools containing that token (used by
+  // getTokenPools). Network-scoped /pools/search only; see the header comment.
+  if (typeof args.token_address === 'string' && args.token_address !== '') params.token_address = args.token_address;
   for (const [legacy, canonical] of Object.entries(POOL_FILTER_PARAM)) {
     const v = args[legacy];
     if (v !== undefined && v !== null) params[canonical] = v;

@@ -2,6 +2,24 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.2.0] - 2026-07-15
+
+Migrate `getTokenPools` to the unified pool search endpoint. DexPaprika removed `/networks/{network}/tokens/{token_address}/pools` (HTTP 410 with `"replacement": "/networks/:network/pools/search"`), so `getTokenPools` was returning the deprecation error from 2.1.1 until this release. `/networks/{network}/pools/search` gained a `token_address` query param that restricts results to pools containing that token.
+
+### Breaking changes
+
+- **`getTokenPools` now returns rows under `results`** (was `pools` + `page_info`) with cursor pagination (`has_next_page` + `next_cursor`), matching the four tools migrated in 2.1.0. The `page` parameter is replaced by `cursor`. Rows use the canonical field names (`volume_usd_24h`, `liquidity_usd`, `price_change_percentage_24h`, ...).
+- **`inversed`/`reorder` and `paired_token_address`/`address` are dropped**: the replacement endpoint has no pair-perspective flip and no second-token pair filter (repeating `token_address` does not act as a pair filter; the API uses only one of the values, not guaranteed by order; spec is final per the API team). The parameters stay in the input schema so existing callers do not fail validation, but supplying `inversed`/`reorder: true` or a `paired_token_address`/`address` value returns a structured `DP400_UNSUPPORTED_PARAM` error with a client-side workaround (compute `1/price` for the flipped pair; filter `results[].tokens` for pair queries).
+
+### Changed
+
+- `getTokenPools` proxies `/networks/{network}/pools/search?token_address=...`, reusing the shared `src/search-mapping.js` normalization: legacy sort values (`volume_usd`, `transactions`, ...) map to the canonical search names, so existing callers keep working.
+- Tool description, server instructions, and `getCapabilities.common_pitfalls` now spell out that the token filter is network-scoped only (the cross-network `/pools/search` accepts `token_address` but silently ignores it) and that an unknown `token_address` returns an empty `results` array with HTTP 200, not an error.
+
+### Fixed
+
+- **Structured errors now actually reach clients**: error results set `isError: true` per the MCP spec. Without the flag, SDK 1.29 validates every result against the tool's `outputSchema` and rejects results that lack `structuredContent`, so any tool error on a schema-bearing tool (including the 2.1.1 deprecation-aware 410 errors) surfaced as an opaque JSON-RPC `-32602 Output validation error` instead of the structured `code`/`suggestion` payload. Found while testing the unsupported-parameter errors in this release.
+
 ## [2.1.3] - 2026-07-14
 
 ### Fixed
