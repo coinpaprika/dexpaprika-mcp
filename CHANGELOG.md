@@ -9,7 +9,7 @@ Migrate `getTokenPools` to the unified pool search endpoint. DexPaprika removed 
 ### Breaking changes
 
 - **`getTokenPools` now returns rows under `results`** (was `pools` + `page_info`) with cursor pagination (`has_next_page` + `next_cursor`), matching the four tools migrated in 2.1.0. The `page` parameter is replaced by `cursor`. Rows use the canonical field names (`volume_usd_24h`, `liquidity_usd`, `price_change_percentage_24h`, ...).
-- **`inversed`/`reorder` and `paired_token_address`/`address` are dropped**: the replacement endpoint has no pair-perspective flip and no second-token pair filter (repeated `token_address` values are last-wins upstream, not a pair filter; spec is final per the API team). The parameters stay in the input schema so existing callers do not fail validation, but supplying `inversed`/`reorder: true` or a `paired_token_address`/`address` value returns a structured `DP400_UNSUPPORTED_PARAM` error with a client-side workaround (compute `1/price` for the flipped pair; filter `results[].tokens` for pair queries).
+- **`inversed`/`reorder` and `paired_token_address`/`address` are dropped**: the replacement endpoint has no pair-perspective flip and no second-token pair filter (repeating `token_address` does not act as a pair filter; the API uses only one of the values, not guaranteed by order; spec is final per the API team). The parameters stay in the input schema so existing callers do not fail validation, but supplying `inversed`/`reorder: true` or a `paired_token_address`/`address` value returns a structured `DP400_UNSUPPORTED_PARAM` error with a client-side workaround (compute `1/price` for the flipped pair; filter `results[].tokens` for pair queries).
 
 ### Changed
 

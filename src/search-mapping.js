@@ -24,8 +24,9 @@
  * pools containing that token, so getTokenPools routes through
  * buildPoolSearchParams too. Two caveats, both verified live (2026-07-15):
  * the filter is network-scoped only (the cross-network /pools/search accepts
- * token_address but silently ignores it), and repeated token_address values
- * are last-wins upstream, NOT a pair filter.
+ * token_address but silently ignores it), and repeating token_address does
+ * not act as a pair filter; the API uses only one of the values (not
+ * guaranteed by order).
  */
 
 const POOL_SORT_CANONICAL = new Set([
