@@ -2,7 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
-## [2.2.0] - 2026-07-15
+## [2.2.1] - 2026-07-22
+
+### Fixed
+
+- **Numeric tool parameters now accept string-encoded numbers.** Every numeric input param (`limit`, `page`, `from`, `to`, and the `*_min`/`*_max`/`created_after`/`created_before` filters) used a strict `z.number()` schema, which rejected values like `"3"` with `-32602 Input validation error: Expected number, received string`. Several LLMs serialize numeric tool arguments as strings, and because the error is deterministic the model re-sends the same call and the agent loops until it hits its recursion limit and gives up with no answer. Switched these params to `z.coerce.number()` so `"3"` and `3` both validate. Output-schema fields are unchanged. Verified end-to-end: a model that previously looped on `getTokenPools(..., limit: "3")` now completes on the first call.
 
 Migrate `getTokenPools` to the unified pool search endpoint. DexPaprika removed `/networks/{network}/tokens/{token_address}/pools` (HTTP 410 with `"replacement": "/networks/:network/pools/search"`), so `getTokenPools` was returning the deprecation error from 2.1.1 until this release. `/networks/{network}/pools/search` gained a `token_address` query param that restricts results to pools containing that token.
 
