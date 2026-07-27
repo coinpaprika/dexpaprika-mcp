@@ -17,7 +17,7 @@ npx dexpaprika-mcp@latest
 
 DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No API keys required. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
 
-> **Prefer zero setup?** Use the hosted MCP server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com): no installation, no API key, same 17 tools. See [Hosted Alternative](#hosted-alternative-no-installation) for transport endpoints.
+> **Prefer zero setup?** Use the hosted MCP server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com): no installation, no API key, the same data tools plus `submitFeedback`. See [Hosted Alternative](#hosted-alternative-no-installation) for transport endpoints.
 
 ## Version 1.3.0 Update Highlights
 
@@ -107,7 +107,7 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 }
 ```
 
-## Available Tools (17)
+## Available Tools (16)
 
 ### Discovery
 
@@ -144,12 +144,6 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 | `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
 | `getTopTokens` | Top tokens on a network ranked by volume, liquidity, FDV, or 24h price change | `network` |
 | `filterNetworkTokens` | Filter tokens by volume, liquidity, FDV, transactions, and creation time | `network` |
-
-### Feedback
-
-| Tool | Description | Required Parameters |
-|------|-------------|---------------------|
-| `submitFeedback` | Report unexpected tool behavior, missing data, or docs gaps straight to the team | `goal` |
 
 ### Example Usage
 

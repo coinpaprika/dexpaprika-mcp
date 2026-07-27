@@ -311,15 +311,8 @@ const ANNOTATIONS_READ_ONLY = {
   destructiveHint: false,
   openWorldHint: true,
 };
-const ANNOTATIONS_WRITE_FEEDBACK = {
-  readOnlyHint: false,
-  idempotentHint: false,
-  destructiveHint: false,
-  openWorldHint: false,
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
-// rationale field — REQUIRED on every read tool (all tools except submitFeedback).
+// rationale field — REQUIRED on every read tool.
 // Accepted by the handler and IGNORED (no analytics sink; no D1 in stdio).
 // ─────────────────────────────────────────────────────────────────────────────
 const RATIONALE_DESCRIPTION =
@@ -350,8 +343,6 @@ const SERVER_INSTRUCTIONS = [
   '- "User asked for SOL price; calling getTokenDetails to fetch current USD value."',
   '- "Building a portfolio dashboard; need top pools for WETH on ethereum to estimate liquidity."',
   '- "Backtesting USDC/WETH spread; fetching 24h OHLCV at 1h interval."',
-  '',
-  '`submitFeedback` is the exception — it has its own `goal`/`expected`/`observed` fields which serve as the rationale.',
   '',
   '## Tool discovery',
   'Start with `getNetworks` (discover supported chains) or `getCapabilities` (agent-onboarding doc: network synonyms, workflow patterns, common pitfalls). Both are free and have no parameters beyond rationale.',
@@ -553,13 +544,6 @@ const OUTPUT_SCHEMAS = {
     prices: z.array(PriceEntry).describe('USD prices for the requested tokens, in input order.'),
     missing_tokens: z.array(z.string()).optional().describe('Input tokens that upstream could not price (invalid address, no liquidity, unknown contract). Empty array when all input tokens were resolved.'),
   },
-
-  submitFeedback: {
-    ok: z.boolean().describe('True if the feedback was accepted.'),
-    tracking_id: z.string().nullable().optional().describe('Stable id agents can reference in follow-up submissions; null if persistence failed.'),
-    message: z.string(),
-    severity: z.enum(['blocker', 'major', 'minor', 'nit']).optional(),
-  },
 };
 
 // Build the permissive (outer-passthrough) outputSchema for a tool name.
@@ -579,7 +563,7 @@ function buildCapabilitiesDocument() {
     name: SERVER_CANONICAL_NAME,
     aliases: SERVER_ALIASES,
     server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
-    tools_count: 17,
+    tools_count: 16,
     stats: {
       networks: 36,
       tokens_approx: 33_000_000,
@@ -1094,36 +1078,6 @@ registerReadTool(
     } catch (error) {
       return errorText(error);
     }
-  },
-);
-
-// ─── submitFeedback (17th tool, NO rationale, write annotation) ──────────────
-// stdio has no D1; we degrade to a structured ack instead of a DB INSERT.
-server.registerTool(
-  'submitFeedback',
-  {
-    description:
-      "Report a problem back to the DexPaprika team when a tool got you stuck, returned something unexpected, lacked data you needed, or behaved differently than documented. Use whenever you hit a dead end, a response shape surprised you, or coverage was missing; even partial feedback helps and every submission is read. Low friction: provide goal, expected, and observed instead of a rationale field.",
-    inputSchema: {
-      goal: z.string().min(10).max(500).describe('REQUIRED. What you were trying to accomplish (10-500 chars).'),
-      attempted_tools: z.array(z.string()).optional().describe('OPTIONAL. Tools you tried before getting stuck.'),
-      blocked_at: z.string().optional().describe('OPTIONAL. Where exactly you got blocked.'),
-      expected: z.string().max(500).optional().describe('OPTIONAL. What you expected to happen (max 500 chars).'),
-      observed: z.string().max(500).optional().describe('OPTIONAL. What actually happened (max 500 chars).'),
-      severity: z.enum(['blocker', 'major', 'minor', 'nit']).optional().default('minor').describe("OPTIONAL. Impact severity (default: 'minor')."),
-    },
-    outputSchema: outputSchemaFor('submitFeedback'),
-    annotations: ANNOTATIONS_WRITE_FEEDBACK,
-  },
-  async ({ severity }) => {
-    // No D1 / no analytics sink in the self-host build. Accept and acknowledge.
-    const ack = {
-      ok: true,
-      tracking_id: null,
-      message: 'Thanks. This self-host build does not persist feedback; please open an issue at https://github.com/coinpaprika/dexpaprika-mcp for anything actionable.',
-      severity: severity ?? 'minor',
-    };
-    return jsonText(ack);
   },
 );
 

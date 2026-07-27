@@ -5,7 +5,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const MIN_TOOLS = 14; // lenient floor (package has 16 on v1.x, 17 on v2.x)
+const MIN_TOOLS = 14; // lenient floor (package exposes 16 read tools)
 const CORE_TOOLS = ['getNetworks', 'getNetworkPools', 'getCapabilities'];
 
 const transport = new StdioClientTransport({ command: 'node', args: ['src/index.js'] });
