@@ -2,6 +2,16 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.3.0] - 2026-07-27
+
+### Removed
+
+- **`submitFeedback` tool removed from the self-host build.** The stdio build had no analytics sink, so the tool only returned an acknowledgement and persisted nothing. Feedback collection now lives solely on the hosted MCP (`mcp.dexpaprika.com`), where it is actually stored. Self-host now exposes 16 read tools; the hosted server keeps `submitFeedback`. Agents that previously called it should submit feedback via the hosted server or open a GitHub issue.
+
+### Changed
+
+- **Intent-first tool descriptions.** Every tool description was rewritten so agents pick the right tool from the description alone: each leads with what the tool returns and adds `Use when asked '...'` cues (e.g. `getNetworkPools` for "the biggest pools on Base", `getTokenPools` for "which pools hold WETH"). The `z.coerce.number()` parameter schemas and all output schemas are unchanged. Matches the descriptions now served by the hosted worker so hosted and self-host read identically.
+
 ## [2.2.1] - 2026-07-22
 
 ### Fixed
