@@ -12,12 +12,12 @@ npm install -g dexpaprika-mcp
 dexpaprika-mcp
 
 # Or run directly without installation
-npx dexpaprika-mcp
+npx dexpaprika-mcp@latest
 ```
 
 DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No API keys required. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
 
-> **Prefer zero setup?** Use the hosted MCP server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com) — no installation, no API key, same 14 tools. See [Hosted Alternative](#hosted-alternative-no-installation) for transport endpoints.
+> **Prefer zero setup?** Use the hosted MCP server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com): no installation, no API key, same 17 tools. See [Hosted Alternative](#hosted-alternative-no-installation) for transport endpoints.
 
 ## Version 1.3.0 Update Highlights
 
@@ -76,7 +76,7 @@ Add the following to your Claude Desktop configuration file:
   "mcpServers": {
     "dexpaprika": {
       "command": "npx",
-      "args": ["dexpaprika-mcp"]
+      "args": ["dexpaprika-mcp@latest"]
     }
   }
 }
@@ -107,14 +107,14 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 }
 ```
 
-## Available Tools (14)
+## Available Tools (17)
 
 ### Discovery
 
 | Tool | Description |
 |------|-------------|
 | `getCapabilities` | Server capabilities, workflow patterns, network synonyms, and best practices. **Start here.** |
-| `getNetworks` | List all 33 supported blockchain networks |
+| `getNetworks` | List every supported blockchain network (36+) |
 | `getStats` | High-level ecosystem stats (total networks, DEXes, pools, tokens) |
 | `search` | Search tokens, pools, and DEXes across ALL networks by name, symbol, or address |
 
@@ -140,8 +140,16 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 | Tool | Description | Required Parameters |
 |------|-------------|---------------------|
 | `getTokenDetails` | Detailed token information | `network`, `token_address` |
-| `getTokenPools` | Liquidity pools containing a token | `network`, `token_address` |
+| `getTokenPools` | Liquidity pools containing a token (network-scoped filter, `results` + cursor pagination) | `network`, `token_address` |
 | `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
+| `getTopTokens` | Top tokens on a network ranked by volume, liquidity, FDV, or 24h price change | `network` |
+| `filterNetworkTokens` | Filter tokens by volume, liquidity, FDV, transactions, and creation time | `network` |
+
+### Feedback
+
+| Tool | Description | Required Parameters |
+|------|-------------|---------------------|
+| `submitFeedback` | Report unexpected tool behavior, missing data, or docs gaps straight to the team | `goal` |
 
 ### Example Usage
 
@@ -155,18 +163,19 @@ const solanaJupToken = await getTokenDetails({
   token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 });
 
-// Find all pools for a specific token with volume sorting:
+// Find pools containing a token (returns `results` with cursor pagination;
+// the token filter only works network-scoped):
 const jupiterPools = await getTokenPools({
   network: "solana",
   token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-  order_by: "volume_usd",
+  order_by: "volume_usd_24h",
   limit: 5
 });
 
-// Get top pools on Ethereum:
+// Get top pools on Ethereum (returns `results` with cursor pagination):
 const ethereumPools = await getNetworkPools({
   network: "ethereum",
-  order_by: "volume_usd",
+  order_by: "volume_usd_24h",
   limit: 10
 });
 
@@ -175,7 +184,7 @@ const filteredPools = await getNetworkPoolsFilter({
   network: "ethereum",
   volume_24h_min: 100000,
   created_after: 1710806400,
-  sort_by: "volume_24h",
+  sort_by: "volume_usd_24h",
   limit: 20
 });
 

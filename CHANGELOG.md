@@ -2,6 +2,91 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.2.1] - 2026-07-22
+
+### Fixed
+
+- **Numeric tool parameters now accept string-encoded numbers.** Every numeric input param (`limit`, `page`, `from`, `to`, and the `*_min`/`*_max`/`created_after`/`created_before` filters) used a strict `z.number()` schema, which rejected values like `"3"` with `-32602 Input validation error: Expected number, received string`. Several LLMs serialize numeric tool arguments as strings, and because the error is deterministic the model re-sends the same call and the agent loops until it hits its recursion limit and gives up with no answer. Switched these params to `z.coerce.number()` so `"3"` and `3` both validate. Output-schema fields are unchanged. Verified end-to-end: a model that previously looped on `getTokenPools(..., limit: "3")` now completes on the first call.
+
+Migrate `getTokenPools` to the unified pool search endpoint. DexPaprika removed `/networks/{network}/tokens/{token_address}/pools` (HTTP 410 with `"replacement": "/networks/:network/pools/search"`), so `getTokenPools` was returning the deprecation error from 2.1.1 until this release. `/networks/{network}/pools/search` gained a `token_address` query param that restricts results to pools containing that token.
+
+### Breaking changes
+
+- **`getTokenPools` now returns rows under `results`** (was `pools` + `page_info`) with cursor pagination (`has_next_page` + `next_cursor`), matching the four tools migrated in 2.1.0. The `page` parameter is replaced by `cursor`. Rows use the canonical field names (`volume_usd_24h`, `liquidity_usd`, `price_change_percentage_24h`, ...).
+- **`inversed`/`reorder` and `paired_token_address`/`address` are dropped**: the replacement endpoint has no pair-perspective flip and no second-token pair filter (repeating `token_address` does not act as a pair filter; the API uses only one of the values, not guaranteed by order; spec is final per the API team). The parameters stay in the input schema so existing callers do not fail validation, but supplying `inversed`/`reorder: true` or a `paired_token_address`/`address` value returns a structured `DP400_UNSUPPORTED_PARAM` error with a client-side workaround (compute `1/price` for the flipped pair; filter `results[].tokens` for pair queries).
+
+### Changed
+
+- `getTokenPools` proxies `/networks/{network}/pools/search?token_address=...`, reusing the shared `src/search-mapping.js` normalization: legacy sort values (`volume_usd`, `transactions`, ...) map to the canonical search names, so existing callers keep working.
+- Tool description, server instructions, and `getCapabilities.common_pitfalls` now spell out that the token filter is network-scoped only (the cross-network `/pools/search` accepts `token_address` but silently ignores it) and that an unknown `token_address` returns an empty `results` array with HTTP 200, not an error.
+
+### Fixed
+
+- **Structured errors now actually reach clients**: error results set `isError: true` per the MCP spec. Without the flag, SDK 1.29 validates every result against the tool's `outputSchema` and rejects results that lack `structuredContent`, so any tool error on a schema-bearing tool (including the 2.1.1 deprecation-aware 410 errors) surfaced as an opaque JSON-RPC `-32602 Output validation error` instead of the structured `code`/`suggestion` payload. Found while testing the unsupported-parameter errors in this release.
+
+## [2.1.3] - 2026-07-14
+
+### Fixed
+- **Repackage of 2.1.2, which is broken on npm**: the 2.1.2 tarball was published without the dist/ directory, so its bin target (dist/bin.js) does not exist and fresh `npx dexpaprika-mcp` installs fail or silently fall back to an older binary on PATH. 2.1.2 is deprecated on the registry; no source changes besides packaging.
+- Added a `prepack` hook that runs the build automatically, so any future `npm pack`/`npm publish` always includes dist/.
+
+## [2.1.2] - 2026-07-14
+
+### Fixed
+- Startup banner reports the real package version instead of a hardcoded v2.0.0; the hosted tool-contract version is shown separately.
+- `getCapabilities` stats refreshed to live coverage: 36 networks, 33M+ tokens, 36M+ pools.
+- README tool count corrected from 14 to 17; added the missing `getTopTokens`, `filterNetworkTokens`, and `submitFeedback` rows to the tools tables.
+
+## [2.1.1] - 2026-07-01
+
+### Added
+- **Deprecation-aware errors**: when the API returns an error whose body carries a `replacement` field, the error now includes the API's message plus `Use <replacement> instead.` and a `metadata.replacement`, so agents are pointed at the new endpoint instead of a bare status line. Generic across any error status, not hardcoded to specific endpoints.
+
+## [2.1.0] - 2026-06-30
+
+Migrate the pool and token list/filter tools to the unified search endpoints. DexPaprika removed `/networks/{network}/pools`, `/networks/{network}/pools/filter`, `/networks/{network}/tokens/top`, and `/networks/{network}/tokens/filter` (HTTP 410), so `getNetworkPools`, `getNetworkPoolsFilter`, `getTopTokens`, and `filterNetworkTokens` were erroring until this release.
+
+### Breaking changes
+
+- **`getNetworkPools`, `getNetworkPoolsFilter`, `getTopTokens`, and `filterNetworkTokens` now return rows under `results`** (was `pools` / `tokens` / `data`) with cursor pagination (`has_next_page` + `next_cursor`) instead of `page_info` and page numbers. The `page` parameter is replaced by `cursor`. Rows use the canonical field names (`volume_usd_24h`, `txns_24h`, `liquidity_usd`, `fdv_usd`, `price_change_percentage_24h`). This mirrors the upstream API change and is unavoidable.
+- **`getTopTokens` no longer supports ordering by price**: the search endpoint rejects it, so a supplied `price_usd` falls back to `volume_usd_24h`.
+
+### Changed
+
+- `getNetworkPools` and `getNetworkPoolsFilter` now proxy `/networks/{network}/pools/search`; `getTopTokens` and `filterNetworkTokens` proxy `/networks/{network}/tokens/search`. Tool names are unchanged for client back-compat.
+- Legacy sort-field values (`volume_usd`, `transactions`, `last_price_change_usd_24h`, `volume_24h`, `liquidity`, ...) and legacy filter param names (`volume_24h_min` → `volume_usd_24h_min`, ...) are auto-mapped to the canonical search names, so existing callers keep working. A shared `src/search-mapping.js` does the normalization.
+- Output schemas and the README examples updated to the search response shape.
+
+## [2.0.0] - 2026-06-03
+
+Full 1:1 contract parity with the hosted DexPaprika MCP worker (`mcp.dexpaprika.com`) v2.0.0. Only the transport differs (stdio vs HTTP); tools, parameters, aliases, synonym resolution, sort normalization, output schemas, server instructions and version now match the worker.
+
+### Breaking changes
+
+- **Response shape — the `{ data, meta }` wrapper is gone.** Previously every tool wrapped its payload as `{ data: <payload>, meta: { rate_limit, response_time_ms, cached, timestamp } }`. Now each tool returns the upstream payload directly, in two forms: `content[0].text` (the JSON string, for older clients) and `structuredContent` (the same object, validated against the tool's `outputSchema`, MCP 2025-06-18+). The per-request `meta` block (rate-limit counters, response time) is no longer emitted. Consumers that read `response.data` must now read the top level. This is intentional and aligns the self-host build with the worker's wire shape.
+- **Array tools wrap under named keys** in `structuredContent`: `getNetworks` → `{ networks: [...] }`, `getPoolOHLCV` → `{ ohlcv: [...] }`. `getTokenMultiPrices` now returns `{ prices: [{id, chain, price_usd}], missing_tokens: [...] }` — tokens upstream could not price are surfaced in `missing_tokens` instead of being silently dropped.
+- **`rationale` is now required on every read tool** (all tools except `submitFeedback`): a 20-500 char string explaining why the call is made. The self-host build accepts it to satisfy the schema and does not persist it (no analytics sink). `submitFeedback` is the one tool with no `rationale` field — its `goal`/`expected`/`observed` fields serve that purpose.
+- **Minimum SDK bump**: `@modelcontextprotocol/sdk` is now `^1.29.0` (was `^1.4.1`). Tools migrated from the deprecated `server.tool()` signature to `server.registerTool()` with explicit `inputSchema`/`outputSchema`/`annotations`.
+
+### Added
+
+- **Network synonym resolution at the wire layer** — `eth` → `ethereum`, `matic` → `polygon`, `sol` → `solana`, and 30+ more across 35 canonical networks. The rewrite happens at the single fetch chokepoint, so advertised synonyms now actually resolve instead of 404ing. The same map drives `getCapabilities.network_synonyms`.
+- **Canonical sort aliases** — `sort_dir` (canonical) alongside `sort` (legacy), and `sort_by` (canonical) alongside `order_by` (legacy), on `getNetworkDexes`, `getNetworkPools`, `getDexPools`, `getTokenPools`, `getTopTokens`. The two filter tools (`getNetworkPoolsFilter`, `filterNetworkTokens`) gain the legacy `sort`/`order_by` aliases. Canonical wins when both are supplied; the legacy wire param each tool already used is preserved.
+- **`getTokenPools` aliases** — `inversed` (canonical, alias of legacy `reorder`) and `paired_token_address` (canonical, alias of legacy `address`).
+- **`submitFeedback` tool (17th tool)** — low-friction feedback channel with `goal`/`attempted_tools`/`blocked_at`/`expected`/`observed`/`severity`. The self-host build returns a structured ack (`{ ok: true, tracking_id: null, ... }`) rather than persisting; the hosted worker writes to its analytics DB.
+- **Per-tool output schemas** — every tool advertises an `outputSchema` (permissive `.passthrough()` so extra upstream fields don't break strict validators like Cursor / Claude Desktop).
+- **Server `instructions`** — onboarding notes (rationale convention, parameter naming, time formats, output shape) advertised once per session via the initialize result.
+
+### Changed
+
+- `getCapabilities` is now a lean, local-only doc matching the worker: top-level `name`/`aliases`/`server`/`tools_count: 17`/`stats` (35 networks, ~29M tokens, ~31M pools, free, no API key)/`network_synonyms`/`workflows`/`common_pitfalls`/`documentation`/`agent_skills`. The previous sprawling capabilities object (validation rules, rate limits, parameter examples, version history, etc.) was replaced. Stale "33 networks" corrected to 35.
+- `page=0` is coerced to `page=1` in all paginated handlers (1-indexed, backward-compat).
+- The structured error handling (`parseAPIError`) is preserved and still surfaces actionable `code`/`suggestion` payloads.
+
+### Notes
+
+- `filterNetworkTokens` advertises a `results` array in its output schema for parity, but the live API returns its rows under `data` (plus a `query` echo). Both pass through `structuredContent` via the schema's outer passthrough; the documented key is optional so real responses validate.
+
 ## [1.3.0] - 2026-03-19
 
 ### ⚠️ BREAKING CHANGES
