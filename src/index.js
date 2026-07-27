@@ -228,7 +228,7 @@ async function buildCapabilitiesDocument() {
     tools: [
       {
         name: "getNetworks",
-        description: "Get the full list of blockchain networks DexPaprika indexes, each with 24h volume, transaction counts, and pool counts. Use when asked \"which chains do you support?\", \"is Base/Solana/Arbitrum covered?\", or whenever you need the exact network slug before calling any other tool. Start here (or getCapabilities) since every other DEX query requires a valid network id. No parameters beyond rationale.",
+        description: "Get the full list of blockchain networks DexPaprika indexes, each with 24h volume, transaction counts, and pool counts. Use when asked 'which chains do you support?', 'is Base/Solana/Arbitrum covered?', or whenever you need the exact network slug before calling any other tool. Start here (or getCapabilities) since every other DEX query requires a valid network id. No parameters beyond rationale.",
         category: "discovery",
         parameters: {},
         returns: { type: "array", items: "Network" },
@@ -236,7 +236,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getCapabilities",
-        description: "Get an agent onboarding guide: supported workflows, network name synonyms, common pitfalls, and recommended call sequences. Use when asked \"how do I use this API?\", \"what order should I call things in?\", or before your first query so you can map user words like \"eth\" to the canonical network slug. This returns static onboarding docs, not live market data; read it once at the start of a session. No parameters beyond rationale.",
+        description: "Get an agent onboarding guide: supported workflows, network name synonyms, common pitfalls, and recommended call sequences. Use when asked 'how do I use this API?', 'what order should I call things in?', or before your first query so you can map user words like 'eth' to the canonical network slug. This returns static onboarding docs, not live market data; read it once at the start of a session. No parameters beyond rationale.",
         category: "discovery",
         parameters: {},
         returns: { type: "object" },
@@ -244,7 +244,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getNetworkDexes",
-        description: "List the DEXes (exchanges) operating on one specific network, such as Uniswap on ethereum or Raydium on solana. Use when asked \"which DEXes are on Base?\", \"does Solana have Orca?\", or when you need a DEX name to pass into getDexPools. Scope is a single network; call getNetworks first if you do not know the slug. Requires network.",
+        description: "List the DEXes (exchanges) operating on one specific network, such as Uniswap on ethereum or Raydium on solana. Use when asked 'which DEXes are on Base?', 'does Solana have Orca?', or when you need a DEX name to pass into getDexPools. Scope is a single network; call getNetworks first if you do not know the slug. Requires network.",
         category: "dexes",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -258,7 +258,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getNetworkPools",
-        description: "Get the top liquidity pools on one network, ranked by 24h volume by default. Use when asked \"what are the biggest/hottest pools on ethereum?\", \"top trading pairs on Base right now\", or \"most active pools on Solana\". This is the primary pool-discovery tool for a whole chain; narrow to one exchange with getDexPools, or set numeric thresholds with getNetworkPoolsFilter. Requires network; rows return under `results` with cursor pagination.",
+        description: "Get the top liquidity pools on one network, ranked by 24h volume by default. Use when asked 'what are the biggest/hottest pools on ethereum?', 'top trading pairs on Base right now', or 'most active pools on Solana'. This is the primary pool-discovery tool for a whole chain; narrow to one exchange with getDexPools, or set numeric thresholds with getNetworkPoolsFilter. Requires network; rows return under `results` with cursor pagination.",
         category: "pools",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -272,7 +272,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getDexPools",
-        description: "Get the pools that belong to one specific DEX on one network, such as all Uniswap v3 pools on ethereum. Use when asked \"show me Raydium pools\", \"top pairs on PancakeSwap\", or \"liquidity on Orca\". Narrower than getNetworkPools (a single exchange, not the whole chain); get the DEX name from getNetworkDexes or search first. Requires network and dex.",
+        description: "Get the pools that belong to one specific DEX on one network, such as all Uniswap v3 pools on ethereum. Use when asked 'show me Raydium pools', 'top pairs on PancakeSwap', or 'liquidity on Orca'. Narrower than getNetworkPools (a single exchange, not the whole chain); get the DEX name from getNetworkDexes or search first. Requires network and dex.",
         category: "pools",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -287,7 +287,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getNetworkPoolsFilter",
-        description: "Get pools on one network filtered by exact thresholds for volume, liquidity, transaction count, or creation time. Use when asked \"pools with over $1M liquidity on Base\", \"pools created in the last 24h\", or \"high-volume low-liquidity pairs\". Choose this over getNetworkPools when the user gives numeric constraints or a time window rather than just \"top\". Requires network; rows return under `results` with cursor pagination.",
+        description: "Get pools on one network filtered by exact thresholds for volume, liquidity, transaction count, or creation time. Use when asked 'pools with over $1M liquidity on Base', 'pools created in the last 24h', or 'high-volume low-liquidity pairs'. Choose this over getNetworkPools when the user gives numeric constraints or a time window rather than just 'top'. Requires network; rows return under `results` with cursor pagination.",
         category: "pools",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -311,7 +311,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "filterNetworkTokens",
-        description: "Get tokens on one network filtered by exact thresholds for volume, liquidity, FDV, transactions, or creation time. Use when asked \"tokens with FDV over $10M on Base\", \"newly created tokens today\", or \"low-liquidity high-volume tokens\". Choose this over getTopTokens when the user gives numeric constraints or a time window rather than a simple ranking. Requires network; rows return under `results` with cursor pagination.",
+        description: "Get tokens on one network filtered by exact thresholds for volume, liquidity, FDV, transactions, or creation time. Use when asked 'tokens with FDV over $10M on Base', 'newly created tokens today', or 'low-liquidity high-volume tokens'. Choose this over getTopTokens when the user gives numeric constraints or a time window rather than a simple ranking. Requires network; rows return under `results` with cursor pagination.",
         category: "tokens",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -334,7 +334,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getTopTokens",
-        description: "Get the top tokens on one network ranked by volume, liquidity, transactions, FDV, or 24h price change. Use when asked \"top gainers on Solana\", \"highest-volume tokens on Base\", or \"biggest tokens by FDV on ethereum\". Ranking by raw price is not supported and silently falls back to volume; for arbitrary numeric filters use filterNetworkTokens. Requires network; rows return under `results` with cursor pagination.",
+        description: "Get the top tokens on one network ranked by volume, liquidity, transactions, FDV, or 24h price change. Use when asked 'top gainers on Solana', 'highest-volume tokens on Base', or 'biggest tokens by FDV on ethereum'. Ranking by raw price is not supported and silently falls back to volume; for arbitrary numeric filters use filterNetworkTokens. Requires network; rows return under `results` with cursor pagination.",
         category: "tokens",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -349,7 +349,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getPoolDetails",
-        description: "Get full details for one pool by its address: the two tokens, current price, liquidity, 24h volume, and transaction counts. Use when asked \"what's the price/TVL of this pool?\", \"details for pool 0x...\", or after search or getNetworkPools surfaces a pool you want to inspect. Returns the live current snapshot only; use getPoolOHLCV for historical candles or getPoolTransactions for the raw swap feed. Requires network and pool_address.",
+        description: "Get full details for one pool by its address: the two tokens, current price, liquidity, 24h volume, and transaction counts. Use when asked 'what's the price/TVL of this pool?', 'details for pool 0x...', or after search or getNetworkPools surfaces a pool you want to inspect. Returns the live current snapshot only; use getPoolOHLCV for historical candles or getPoolTransactions for the raw swap feed. Requires network and pool_address.",
         category: "pools",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -361,7 +361,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getPoolOHLCV",
-        description: "Get historical open/high/low/close/volume candles for one pool across a date range and interval (1m up to 1d). Use when asked \"price history of this pair\", \"hourly chart for the last week\", \"candles since Jan 1\", or for backtesting and technical analysis. This is historical time-series data; use getPoolDetails for the single current price. Requires network, pool_address, and start.",
+        description: "Get historical open/high/low/close/volume candles for one pool across a date range and interval (1m up to 1d). Use when asked 'price history of this pair', 'hourly chart for the last week', 'candles since Jan 1', or for backtesting and technical analysis. This is historical time-series data; use getPoolDetails for the single current price. Requires network, pool_address, and start.",
         category: "pools",
         parameters: {
           network: { type: "string", required: true },
@@ -377,7 +377,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getPoolTransactions",
-        description: "Get the recent individual swap transactions for one pool, newest first, optionally filtered to a from/to window (Unix epoch seconds, last 7 days max). Use when asked \"recent trades on this pool\", \"who swapped in the last hour\", or \"raw transaction feed\". These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary (use getPoolDetails). Requires network and pool_address.",
+        description: "Get the recent individual swap transactions for one pool, newest first, optionally filtered to a from/to window (Unix epoch seconds, last 7 days max). Use when asked 'recent trades on this pool', 'who swapped in the last hour', or 'raw transaction feed'. These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary (use getPoolDetails). Requires network and pool_address.",
         category: "pools",
         parameters: {
           network: { type: "string", required: true },
@@ -404,7 +404,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getTokenPools",
-        description: "Get the liquidity pools that contain a specific token on one network. Use when asked \"which pools hold WETH on ethereum?\", \"where can I trade this token\", or \"liquidity venues for 0x...\". The token filter is network-scoped only, so run search first if you do not know the network; an unknown token_address returns an empty `results` array, not an error. Requires network and token_address; rows return under `results` with cursor pagination.",
+        description: "Get the liquidity pools that contain a specific token on one network. Use when asked 'which pools hold WETH on ethereum?', 'where can I trade this token', or 'liquidity venues for 0x...'. The token filter is network-scoped only, so run search first if you do not know the network; an unknown token_address returns an empty `results` array, not an error. Requires network and token_address; rows return under `results` with cursor pagination.",
         category: "tokens",
         parameters: {
           network: { type: "string", required: true },
@@ -421,7 +421,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getTokenMultiPrices",
-        description: "Get current USD prices for up to 10 tokens on the same network in one batched call. Use when asked \"prices for these tokens\", \"compare the price of X, Y and Z\", or when building a portfolio or dashboard snapshot. Tokens that cannot be priced come back in `missing_tokens` rather than being dropped, so check that list to catch partial failures; for one token with full metadata use getTokenDetails. Requires network and tokens.",
+        description: "Get current USD prices for up to 10 tokens on the same network in one batched call. Use when asked 'prices for these tokens', 'compare the price of X, Y and Z', or when building a portfolio or dashboard snapshot. Tokens that cannot be priced come back in `missing_tokens` rather than being dropped, so check that list to catch partial failures; for one token with full metadata use getTokenDetails. Requires network and tokens.",
         category: "tokens",
         parameters: {
           network: { type: "string", required: true, description: "Network ID", example: "ethereum" },
@@ -432,7 +432,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "search",
-        description: "Search across ALL networks at once for tokens, pools, and DEXes by name, symbol, or address, returning three arrays: tokens, pools, dexes. Use when asked \"find PEPE\", \"what's the address for USDC\", or whenever you do not yet know which network something lives on. This is the cross-chain entry point; once you have a network slug, switch to the network-scoped tools. Requires query.",
+        description: "Search across ALL networks at once for tokens, pools, and DEXes by name, symbol, or address, returning three arrays: tokens, pools, dexes. Use when asked 'find PEPE', 'what's the address for USDC', or whenever you do not yet know which network something lives on. This is the cross-chain entry point; once you have a network slug, switch to the network-scoped tools. Requires query.",
         category: "search",
         parameters: {
           query: { type: "string", required: true, description: "Search term", example: "uniswap" }
@@ -442,7 +442,7 @@ async function buildCapabilitiesDocument() {
       },
       {
         name: "getStats",
-        description: "Get platform-wide totals for DexPaprika: number of networks, DEXes, pools, and tokens indexed. Use when asked \"how much data do you cover?\", \"how many chains or pools total?\", or for a one-line coverage summary. These are ecosystem-wide counts, not per-network figures; use getNetworks for per-chain breakdowns. No parameters beyond rationale.",
+        description: "Get platform-wide totals for DexPaprika: number of networks, DEXes, pools, and tokens indexed. Use when asked 'how much data do you cover?', 'how many chains or pools total?', or for a one-line coverage summary. These are ecosystem-wide counts, not per-network figures; use getNetworks for per-chain breakdowns. No parameters beyond rationale.",
         category: "utils",
         parameters: {},
         returns: { type: "object", properties: ["chains", "factories", "pools", "tokens"] },
