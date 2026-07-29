@@ -631,7 +631,7 @@ function registerReadTool(name, description, inputShape, handler) {
 // ─── getNetworks ─────────────────────────────────────────────────────────────
 registerReadTool(
   'getNetworks',
-  'Get the full list of blockchain networks DexPaprika indexes, each with 24h volume, transaction counts, and pool counts. Use when asked \'which chains do you support?\', \'is Base/Solana/Arbitrum covered?\', or whenever you need the exact network slug before calling any other tool. Start here (or getCapabilities) since every other DEX query requires a valid network id. No parameters beyond rationale.',
+  'List every blockchain network DexPaprika indexes, each row carrying its network id (slug), 24h volume, transaction count, and pool count. Read-only and keyless. Start here (or getCapabilities) to get the exact network slug that nearly every other tool requires as its \'network\' argument. Use for \'which chains do you support?\', \'is Base/Solana/Arbitrum covered?\', or \'what is the slug for Polygon?\'. Returns the full array with no pagination or sorting; takes no parameters beyond a short rationale. For platform-wide totals rather than a per-network list use getStats.',
   {},
   async () => {
     try {
@@ -645,7 +645,7 @@ registerReadTool(
 // ─── getCapabilities (local-only, no upstream call) ──────────────────────────
 registerReadTool(
   'getCapabilities',
-  'Get an agent onboarding guide: supported workflows, network name synonyms, common pitfalls, and recommended call sequences. Use when asked \'how do I use this API?\', \'what order should I call things in?\', or before your first query so you can map user words like \'eth\' to the canonical network slug. This returns static onboarding docs, not live market data; read it once at the start of a session. No parameters beyond rationale.',
+  'Get the static agent onboarding guide for this server: supported workflows, network name synonyms (mapping words like \'eth\' to the canonical slug \'ethereum\'), recommended call sequences, and common pitfalls. Read-only and keyless. Read it once at the start of a session before your first query, or when asked \'how do I use this API?\', \'what order should I call things in?\', or \'which slug maps to eth?\'. This returns onboarding docs, not live market data; for the actual list of network slugs use getNetworks, and for coverage totals use getStats. Takes no parameters beyond a short rationale.',
   {},
   async () => {
     try {
@@ -659,7 +659,7 @@ registerReadTool(
 // ─── getNetworkDexes ─────────────────────────────────────────────────────────
 registerReadTool(
   'getNetworkDexes',
-  'List the DEXes (exchanges) operating on one specific network, such as Uniswap on ethereum or Raydium on solana. Use when asked \'which DEXes are on Base?\', \'does Solana have Orca?\', or when you need a DEX name to pass into getDexPools. Scope is a single network; call getNetworks first if you do not know the slug. Requires network.',
+  'List the DEXes (exchanges) operating on one network, such as Uniswap on ethereum or Raydium on solana, returned under \'dexes\' with page_info (page, total_pages). Read-only and keyless. Use for \'which DEXes are on Base?\', \'does Solana have Orca?\', or to get a dex id to feed into getDexPools. Scope is a single network; call getNetworks first for the slug. Params: network (required slug); limit (default 10, max 100); page (default 1, 1-indexed); sort_by (only \'pool\'; legacy alias order_by); sort_dir \'asc\' or \'desc\' (default \'desc\'; legacy alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     page: z.coerce.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
@@ -704,7 +704,7 @@ registerReadTool(
 // ─── getNetworkPools ─────────────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPools',
-  'Get the top liquidity pools on one network, ranked by 24h volume by default. Use when asked \'what are the biggest/hottest pools on ethereum?\', \'top trading pairs on Base right now\', or \'most active pools on Solana\'. This is the primary pool-discovery tool for a whole chain; narrow to one exchange with getDexPools, or set numeric thresholds with getNetworkPoolsFilter. Requires network; rows return under `results` with cursor pagination.',
+  'Get the top liquidity pools across a whole network, ranked by 24h volume by default, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. This is the primary chain-wide pool discovery tool. Use for \'biggest pools on ethereum\', \'top trading pairs on Base\', or \'most active pools on Solana\'. Narrow to one exchange with getDexPools, or apply numeric/time filters with getNetworkPoolsFilter. Params: network (required slug); limit (default 10, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', canonical *_24h fields, alias order_by); sort_dir \'asc\' or \'desc\' (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
@@ -728,7 +728,7 @@ registerReadTool(
 // ─── getDexPools ─────────────────────────────────────────────────────────────
 registerReadTool(
   'getDexPools',
-  'Get the pools that belong to one specific DEX on one network, such as all Uniswap v3 pools on ethereum. Use when asked \'show me Raydium pools\', \'top pairs on PancakeSwap\', or \'liquidity on Orca\'. Narrower than getNetworkPools (a single exchange, not the whole chain); get the DEX name from getNetworkDexes or search first. Requires network and dex.',
+  'Get the pools belonging to one specific DEX on one network, e.g. all Uniswap v3 pools on ethereum, returned under \'pools\' with page_info. Read-only and keyless. Narrower than getNetworkPools (a single exchange, not the whole chain). Use for \'show me Raydium pools\', \'top pairs on PancakeSwap\', or \'liquidity on Orca\'. Get the dex id from getNetworkDexes or search first. Params: network (required slug); dex (required id, e.g. \'uniswap_v3\'); limit (default 10, max 100); page (default 1); sort_by one of \'volume_usd\',\'price_usd\',\'transactions\',\'last_price_change_usd_24h\',\'created_at\' (default \'volume_usd\', alias order_by); sort_dir \'asc\'/\'desc\' (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     dex: z.string().describe("REQUIRED: DEX identifier from getNetworkDexes (e.g., 'uniswap_v3')"),
@@ -757,7 +757,7 @@ registerReadTool(
 // ─── getNetworkPoolsFilter ───────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPoolsFilter',
-  'Get pools on one network filtered by exact thresholds for volume, liquidity, transaction count, or creation time. Use when asked \'pools with over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Choose this over getNetworkPools when the user gives numeric constraints or a time window rather than just \'top\'. Requires network; rows return under `results` with cursor pagination.',
+  'Get pools on one network filtered by numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getNetworkPools when the user gives numeric constraints or a time window. Use for \'pools over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Optional filters (AND-combined): volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after/created_before (Unix timestamps). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -790,7 +790,7 @@ registerReadTool(
 // ─── getPoolDetails ──────────────────────────────────────────────────────────
 registerReadTool(
   'getPoolDetails',
-  'Get full details for one pool by its address: the two tokens, current price, liquidity, 24h volume, and transaction counts. Use when asked \'what\'s the price/TVL of this pool?\', \'details for pool 0x...\', or after search or getNetworkPools surfaces a pool you want to inspect. Returns the live current snapshot only; use getPoolOHLCV for historical candles or getPoolTransactions for the raw swap feed. Requires network and pool_address.',
+  'Get the full current snapshot for one pool by address: its two tokens, current price, liquidity/TVL, 24h volume, and transaction counts, returned as a single pool object (not a list). Read-only and keyless. Use after search or getNetworkPools surfaces a pool, or for \'price/TVL of this pool?\' or \'details for pool 0x...\'. Returns live values only; for historical candles use getPoolOHLCV, and for the raw swap feed use getPoolTransactions. Params: network (required slug); pool_address (required, e.g. \'0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640\'); inversed (optional bool, default false, flips the token price ratio to token1/token0).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe("REQUIRED: Pool address or identifier (e.g., '0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640')"),
@@ -809,7 +809,7 @@ registerReadTool(
 // ─── getPoolOHLCV ────────────────────────────────────────────────────────────
 registerReadTool(
   'getPoolOHLCV',
-  'Get historical open/high/low/close/volume candles for one pool across a date range and interval (1m up to 1d). Use when asked \'price history of this pair\', \'hourly chart for the last week\', \'candles since Jan 1\', or for backtesting and technical analysis. This is historical time-series data; use getPoolDetails for the single current price. Requires network, pool_address, and start.',
+  'Get historical OHLCV candles (open, high, low, close, volume) for one pool over a time range, returned as a time-series array. Read-only and keyless. Use for \'price history of this pair\', \'hourly chart for the last week\', \'candles since Jan 1\', or backtesting; for the single current price use getPoolDetails instead. Params: network (required); pool_address (required); start (required; Unix timestamp, RFC3339, or yyyy-mm-dd); end (optional, capped to 1 year after start); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 100, max 366 candles); inversed (optional bool, default false).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
@@ -833,7 +833,7 @@ registerReadTool(
 // ─── getPoolTransactions ─────────────────────────────────────────────────────
 registerReadTool(
   'getPoolTransactions',
-  'Get the recent individual swap transactions for one pool, newest first, optionally filtered to a from/to window (Unix epoch seconds, last 7 days max). Use when asked \'recent trades on this pool\', \'who swapped in the last hour\', or \'raw transaction feed\'. These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary (use getPoolDetails). Requires network and pool_address.',
+  'Get one pool\'s recent individual swap transactions, newest first, returned under \'transactions\' (paginate with page, or a cursor). Read-only and keyless. These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary snapshot (use getPoolDetails). Use for \'recent trades on this pool\', \'who swapped in the last hour\', or \'raw transaction feed\'. Params: network (required); pool_address (required); limit (default 10, max 100); page (default 1, up to 100 pages) or cursor (a transaction id); from (optional Unix seconds, inclusive, capped to the last 7 days); to (optional Unix seconds, exclusive, must be after from).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
@@ -862,7 +862,7 @@ registerReadTool(
 // ─── getTokenDetails ─────────────────────────────────────────────────────────
 registerReadTool(
   'getTokenDetails',
-  'Get metadata and multi-timeframe price and volume metrics for one token by its contract address on one network, including website, Twitter and Telegram links. Use for \'price and volume for 0x... on Base\', \'tell me about this token\'. If you only have a symbol (e.g. WETH) and not an address, call search first to resolve it, then use this. For several tokens at once use getTokenMultiPrices. Requires network and token_address.',
+  'Get one token\'s data and metadata by contract address on one network: multi-timeframe price and volume metrics, plus name, website, Twitter, and Telegram links, returned as a single token object. Read-only and keyless. Use for \'price and volume for 0x... on Base\' or \'tell me about this token\'. If you only have a symbol like WETH, call search first to resolve the address and network. For many tokens\' prices at once use getTokenMultiPrices; for the pools holding this token use getTokenPools. Params: network (required slug); token_address (required contract address, e.g. \'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN\' on solana).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     token_address: z.string().describe("REQUIRED: Token contract address (e.g., 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN' for Jupiter on Solana)"),
@@ -889,7 +889,7 @@ registerReadTool(
 // silently returning data that does not match the request.
 registerReadTool(
   'getTokenPools',
-  'Get the liquidity pools that contain a specific token on one network. Use when asked \'which pools hold WETH on ethereum?\', \'where can I trade this token\', or \'liquidity venues for 0x...\'. The token filter is network-scoped only, so run search first if you do not know the network; an unknown token_address returns an empty `results` array, not an error. Requires network and token_address; rows return under `results` with cursor pagination.',
+  'Get the liquidity pools that contain a specific token on one network, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Use for \'which pools hold WETH on ethereum?\' or \'liquidity venues for 0x...\'. Network-scoped, so run search first if unsure of the network; unknown addresses return empty results, not an error. For the token\'s own price use getTokenDetails. Params: network (required); token_address (required); limit (default 10, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort). Extra params such as inversed or paired_token_address are unsupported and error.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     token_address: z.string().describe('REQUIRED: Token contract address. Results are restricted to pools on the given network containing this token. Unknown addresses return empty results, not an error.'),
@@ -942,7 +942,7 @@ registerReadTool(
 // ─── getTokenMultiPrices (hand-built response, not jsonText) ──────────────────
 registerReadTool(
   'getTokenMultiPrices',
-  'Get current USD prices for up to 10 tokens on the same network in one batched call. Use when asked \'prices for these tokens\', \'compare the price of X, Y and Z\', or when building a portfolio or dashboard snapshot. Tokens that cannot be priced come back in `missing_tokens` rather than being dropped, so check that list to catch partial failures; for one token with full metadata use getTokenDetails. Requires network and tokens.',
+  'Get current USD prices for up to 10 tokens on the same network in one batched call, returned as a prices array plus a missing_tokens list. Read-only and keyless. Tokens that cannot be priced come back in missing_tokens rather than being dropped, so check that list for partial failures. Use for \'prices for these tokens\', \'compare the price of X, Y and Z\', or building a portfolio/dashboard snapshot. For one token with full metadata and multi-timeframe stats use getTokenDetails. Params: network (required slug, all tokens must share it); tokens (required array of 1 to 10 contract addresses).',
   {
     network: z.string().describe('REQUIRED: Network ID from getNetworks'),
     tokens: z.array(z.string()).min(1).max(10).describe('REQUIRED: Up to 10 token contract addresses on the same network.'),
@@ -978,7 +978,7 @@ registerReadTool(
 // ─── filterNetworkTokens ─────────────────────────────────────────────────────
 registerReadTool(
   'filterNetworkTokens',
-  'Get tokens on one network filtered by exact thresholds for volume, liquidity, FDV, transactions, or creation time. Use when asked \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Choose this over getTopTokens when the user gives numeric constraints or a time window rather than a simple ranking. Requires network; rows return under `results` with cursor pagination.',
+  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, created_after/created_before (Unix timestamps). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -1011,7 +1011,7 @@ registerReadTool(
 // ─── getTopTokens ────────────────────────────────────────────────────────────
 registerReadTool(
   'getTopTokens',
-  'Get the top tokens on one network ranked by volume, liquidity, transactions, FDV, or 24h price change. Use when asked \'top gainers on Solana\', \'highest-volume tokens on Base\', or \'biggest tokens by FDV on ethereum\'. Ranking by raw price is not supported and silently falls back to volume; for arbitrary numeric filters use filterNetworkTokens. Requires network; rows return under `results` with cursor pagination.',
+  'Get the top tokens on one network ranked by volume, liquidity, transactions, FDV, or 24h price change, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Use for \'top gainers on Solana\', \'highest-volume tokens on Base\', or \'biggest tokens by FDV on ethereum\'. For arbitrary numeric filters or a time window use filterNetworkTokens instead. Params: network (required slug); limit (default 50, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', alias order_by), noting that ranking by raw price is unsupported and silently falls back to volume; sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -1035,7 +1035,7 @@ registerReadTool(
 // ─── search (cross-network) ──────────────────────────────────────────────────
 registerReadTool(
   'search',
-  "Search across ALL networks at once for tokens, pools, and DEXes by name, symbol, or address, returning three arrays: tokens, pools, dexes. Use when asked 'find PEPE', 'what's the address for USDC', or whenever you do not yet know which network something lives on. This is the cross-chain entry point; once you have a network slug, switch to the network-scoped tools. Requires query.",
+  'Search across ALL networks at once for tokens, pools, and DEXes by name, symbol, or address, returning three arrays: \'tokens\', \'pools\', and \'dexes\'. Read-only and keyless. This is the cross-chain entry point when you do not yet know which network something lives on; once you have a network slug from the results, switch to the network-scoped tools. Use for \'find PEPE\', \'what is the address for USDC\', or \'which chain is this token on?\'. No matches returns empty arrays, not an error. Params: query (required; a name, symbol, or contract address, e.g. \'uniswap\', \'bitcoin\', or \'0x...\'); limit (optional, caps results per category, applied client-side).',
   {
     query: z.string().describe("REQUIRED: Search term (e.g., 'uniswap', 'bitcoin', or a token address)"),
     limit: z.coerce.number().optional().describe('OPTIONAL: Max results per category (tokens/pools/dexes), applied client-side'),
@@ -1070,7 +1070,7 @@ registerReadTool(
 // ─── getStats ────────────────────────────────────────────────────────────────
 registerReadTool(
   'getStats',
-  'Get platform-wide totals for DexPaprika: number of networks, DEXes, pools, and tokens indexed. Use when asked \'how much data do you cover?\', \'how many chains or pools total?\', or for a one-line coverage summary. These are ecosystem-wide counts, not per-network figures; use getNetworks for per-chain breakdowns. No parameters beyond rationale.',
+  'Get platform-wide totals for DexPaprika: the number of networks, DEXes, pools, and tokens indexed, returned as a single summary object. Read-only and keyless. Use for \'how much data do you cover?\', \'how many chains or pools total?\', or a one-line coverage summary. These are ecosystem-wide counts, not per-network figures; use getNetworks for the per-chain breakdown, or getCapabilities for onboarding docs. Takes no parameters beyond a short rationale.',
   {},
   async () => {
     try {

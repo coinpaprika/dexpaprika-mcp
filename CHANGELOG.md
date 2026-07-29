@@ -2,6 +2,12 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.3.1] - 2026-07-29
+
+### Changed
+
+- **Sharpened all 16 read-tool descriptions for tool-definition quality.** Each now surfaces the sort options (canonical `sort_by`/`sort_dir` with their legacy `order_by`/`sort` aliases), pagination model and defaults, key filters, and the returned shape into the description prose (previously only in the schema), plus clearer differentiation among the pool/token tools. Corrected the stated return envelope for `getNetworkDexes` (`dexes`), `getDexPools` (`pools`), and `getPoolTransactions` (`transactions`) with `page_info`, versus the `results`+cursor tools. No behavior, parameter, or output change.
+
 ## [2.3.0] - 2026-07-27
 
 ### Removed
