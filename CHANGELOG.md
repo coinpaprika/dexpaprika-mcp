@@ -2,6 +2,14 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.3.2] - 2026-07-30
+
+### Changed
+
+- **Stopped calling `order_by`/`sort` deprecated.** They are the parameter names the REST API at `api.dexpaprika.com` actually requires, so labelling them deprecated pushed people toward using `sort_by` against REST, where an unrecognized parameter *name* is silently dropped and the default `volume_usd_24h desc` ordering makes it look like the sort worked. Both spellings remain accepted here; the descriptions now say so and point at which name each layer uses.
+- `sort_by` and `sort_dir` descriptions now cross-reference their REST equivalents (`order_by`, `sort`).
+- Added a `getCapabilities` pitfall spelling out the MCP versus REST naming difference, including that an unrecognized `order_by` *value* does return a 400 listing the valid fields.
+
 ## [2.3.1] - 2026-07-29
 
 ### Changed
