@@ -17,15 +17,13 @@ dexpaprika-mcp
 npx dexpaprika-mcp@latest
 ```
 
-DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No API keys required. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
+DexPaprika MCP connects Claude to live DEX data across multiple blockchains. The free tier needs no API key to start. [Installation](#installation) | [Configuration](#claude-desktop-integration) | [API Reference](https://docs.dexpaprika.com/introduction)
 
-> **Prefer zero setup?** Use the hosted MCP server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com): no installation, no API key, the same data tools plus `submitFeedback`. See [Hosted Alternative](#hosted-alternative-no-installation) for transport endpoints.
+> **Prefer zero setup?** Use the hosted MCP server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com): no installation, no key to start, the same data tools plus `submitFeedback`. See [Hosted server](#hosted-server-no-installation) for transport endpoints.
 
-## Version 1.3.0 Update Highlights
+## Latest release
 
-**New tools**: `getCapabilities` (agent onboarding with workflows, synonyms, best practices) and `getNetworkPoolsFilter` (server-side pool filtering by volume, transactions, creation time).
-
-**Breaking**: Parameters renamed to snake_case (`poolAddress` → `pool_address`, `tokenAddress` → `token_address`, `orderBy` → `order_by`). Pagination is now 1-indexed. See [CHANGELOG.md](CHANGELOG.md) for full migration guide.
+See [CHANGELOG.md](CHANGELOG.md) for release notes and migration guides.
 
 ## What Can You Build?
 
@@ -40,10 +38,10 @@ DexPaprika MCP connects Claude to live DEX data across multiple blockchains. No 
 
 ### Installing via Smithery
 
-To install DexPaprika for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@coinpaprika/dexpaprika-mcp):
+To install DexPaprika for Claude Desktop automatically via [Smithery](https://smithery.ai/servers/coinpaprika/dexpaprika):
 
 ```bash
-npx -y @smithery/cli install @coinpaprika/dexpaprika-mcp --client claude
+npx -y smithery mcp add coinpaprika/dexpaprika
 ```
 
 ### Manual Installation
@@ -86,7 +84,7 @@ Add the following to your Claude Desktop configuration file:
 
 After restarting Claude Desktop, the DexPaprika tools will be available to Claude automatically.
 
-### Hosted Alternative (No Installation)
+### Hosted server (no installation)
 
 If you prefer zero setup, point any MCP-compatible client directly at the hosted server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com). The landing page provides setup instructions and documentation. The following transport endpoints are available:
 
@@ -96,7 +94,7 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 | SSE | `https://mcp.dexpaprika.com/sse` | Legacy SSE transport |
 | JSON-RPC | `https://mcp.dexpaprika.com/mcp` | Direct JSON-RPC |
 
-> **Note**: These are MCP protocol endpoints — they won't display anything in a browser. Visit [mcp.dexpaprika.com](https://mcp.dexpaprika.com) for the landing page.
+> **Note**: These are MCP protocol endpoints. They won't display anything in a browser. Visit [mcp.dexpaprika.com](https://mcp.dexpaprika.com) for the landing page.
 
 ```json
 {
@@ -111,12 +109,14 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 
 ## Available Tools (16)
 
+This self-host build registers 16 read tools. The hosted server at `mcp.dexpaprika.com` registers 17: the same 16 plus `submitFeedback`. Verify either with a live `tools/list`.
+
 ### Discovery
 
 | Tool | Description |
 |------|-------------|
 | `getCapabilities` | Server capabilities, workflow patterns, network synonyms, and best practices. **Start here.** |
-| `getNetworks` | List every supported blockchain network (36+) |
+| `getNetworks` | List every supported blockchain network (36) |
 | `getStats` | High-level ecosystem stats (total networks, DEXes, pools, tokens) |
 | `search` | Search tokens, pools, and DEXes across ALL networks by name, symbol, or address |
 
@@ -130,7 +130,7 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 
 | Tool | Description | Required Parameters |
 |------|-------------|---------------------|
-| `getNetworkPools` | **PRIMARY** — Get top liquidity pools on a network | `network` |
+| `getNetworkPools` | **PRIMARY**. Get top liquidity pools on a network | `network` |
 | `getDexPools` | Get pools from a specific DEX | `network`, `dex` |
 | `getNetworkPoolsFilter` | Filter pools by volume, transactions, creation time | `network` |
 | `getPoolDetails` | Detailed pool info (price, volume, TVL, tokens) | `network`, `pool_address` |
@@ -217,7 +217,8 @@ const prices = await getTokenMultiPrices({
 
 ## Rate Limits & Performance
 
-- **Free Tier Limits**: 10,000 requests per day
+- **Free tier**: 200,000 credits per month keyless per IP, 500,000 with a free API key, at 30 requests per minute. Pro is $99/month for 5,000,000 credits at 300 requests per minute. One request costs one credit; batch endpoints cost one credit per item. Current figures: https://dexpaprika.com/pricing
+- **Data delay**: up to 15 seconds on the free tier, real-time on Pro
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Data Freshness**: Pool and token data updated every 15-30s
 - **Error Handling**: Structured errors with codes, suggestions, and retry guidance
@@ -232,7 +233,7 @@ const prices = await getTokenMultiPrices({
 - **Timeout errors**: Large data requests may take longer, consider pagination
 - **Network errors**: Check network connectivity, the service requires internet access
 - **OHLCV limitations**: Maximum range between start and end dates is 1 year; use pagination for longer timeframes
-- **Empty OHLCV**: Pool may be too new — use `getPoolTransactions` instead
+- **Empty OHLCV**: Pool may be too new. Use `getPoolTransactions` instead
 
 ## Development
 
@@ -265,7 +266,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Additional Resources
 
 - [DexPaprika API Documentation](https://docs.dexpaprika.com/introduction)
-- [Hosted MCP Server](https://mcp.dexpaprika.com) — Zero-setup alternative
-- [Model Context Protocol Specification](https://github.com/anthropics/anthropic-cookbook/blob/main/mcp/README.md)
+- [Hosted MCP Server](https://mcp.dexpaprika.com), zero-setup option
+- [Model Context Protocol Specification](https://modelcontextprotocol.io)
 - [DexPaprika](https://dexpaprika.com) - Comprehensive onchain analytics market data
 - [CoinPaprika](https://coinpaprika.com) - Comprehensive cryptocurrency market data

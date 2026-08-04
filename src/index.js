@@ -332,7 +332,7 @@ function coercePage(page) {
 // session via the MCP initialize result.instructions. Truthful for stdio.
 // ─────────────────────────────────────────────────────────────────────────────
 const SERVER_INSTRUCTIONS = [
-  '# DexPaprika MCP — agent usage notes',
+  '# DexPaprika MCP: agent usage notes',
   '',
   '## `rationale` field (required on every read tool)',
   'Every read tool (`getNetworks`, `getPoolDetails`, etc.) requires a `rationale` string of 20-500 chars.',
@@ -348,9 +348,9 @@ const SERVER_INSTRUCTIONS = [
   'Start with `getNetworks` (discover supported chains) or `getCapabilities` (agent-onboarding doc: network synonyms, workflow patterns, common pitfalls). Both are free and have no parameters beyond rationale.',
   '',
   '## Parameter naming',
-  'Sort parameters accept both legacy and canonical names — pick whichever is clearer; the server normalizes both. Canonical names (preferred going forward):',
-  '- `sort_dir` (legacy: `sort`) — sort direction, "asc" or "desc".',
-  '- `sort_by` (legacy: `order_by`) — sort field, tool-specific enum.',
+  'Sort parameters accept both legacy and canonical names. Pick whichever is clearer; the server normalizes both. Canonical names (preferred going forward):',
+  '- `sort_dir` (legacy: `sort`), sort direction, "asc" or "desc".',
+  '- `sort_by` (legacy: `order_by`), sort field, tool-specific enum.',
   '',
   '`getTokenPools` no longer accepts `inversed`/`reorder` or `paired_token_address`/`address`: the endpoint it',
   'proxied was removed and its replacement (/networks/{network}/pools/search with token_address) has no equivalent',
@@ -366,7 +366,7 @@ const SERVER_INSTRUCTIONS = [
   '## Output shape',
   "All tools return both `content[0].text` (JSON string, for older clients) and `structuredContent` (validated against the tool's `outputSchema`, 2025-06-18+). Prefer `structuredContent` to avoid the parse round-trip.",
   '',
-  'Array-returning tools wrap the array under a named key in structuredContent — `getNetworks` → `{ networks: [...] }`, `getPoolOHLCV` → `{ ohlcv: [...] }`, `getTokenMultiPrices` → `{ prices: [...] }`.',
+  'Array-returning tools wrap the array under a named key in structuredContent: `getNetworks` gives `{ networks: [...] }`, `getPoolOHLCV` gives `{ ohlcv: [...] }`, `getTokenMultiPrices` gives `{ prices: [...] }`.',
 ].join('\n');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -469,8 +469,13 @@ const OUTPUT_SCHEMAS = {
       networks: z.number(),
       tokens_approx: z.number(),
       pools_approx: z.number(),
-      free: z.boolean(),
-      requires_api_key: z.boolean(),
+      free_tier: z.boolean(),
+      key_required_to_start: z.boolean(),
+      free_tier_credits_per_month: z.number(),
+      free_key_credits_per_month: z.number(),
+      free_tier_requests_per_minute: z.number(),
+      free_tier_max_data_delay_seconds: z.number(),
+      pricing_url: z.string(),
     }).passthrough(),
     network_synonyms: z.record(z.string(), z.array(z.string())).describe('Canonical network id -> common alternates an agent might try.'),
     workflows: z.record(z.string(), z.array(z.string())).describe('Named tool sequences for common agent tasks.'),
@@ -524,7 +529,7 @@ const OUTPUT_SCHEMAS = {
     symbol: z.string().optional(),
     chain: z.string().optional(),
     decimals: z.number().optional(),
-    total_supply: z.union([z.number(), z.string()]).optional().describe('Raw on-chain total supply. Big numbers may overflow JS Number — handle as string for tokens with 18+ decimals.'),
+    total_supply: z.union([z.number(), z.string()]).optional().describe('Raw on-chain total supply. Big numbers may overflow JS Number, so handle as string for tokens with 18+ decimals.'),
     description: z.string().optional(),
     website: z.string().optional(),
     has_image: z.boolean().optional(),
@@ -568,8 +573,13 @@ function buildCapabilitiesDocument() {
       networks: 36,
       tokens_approx: 33_000_000,
       pools_approx: 36_000_000,
-      free: true,
-      requires_api_key: false,
+      free_tier: true,             // a free tier exists; it is metered, not unlimited
+      key_required_to_start: false,
+      free_tier_credits_per_month: 200_000,        // keyless, per IP
+      free_key_credits_per_month: 500_000,         // with a free API key
+      free_tier_requests_per_minute: 30,
+      free_tier_max_data_delay_seconds: 15,        // real-time is the Pro figure
+      pricing_url: 'https://dexpaprika.com/pricing',
     },
     network_synonyms: NETWORK_SYNONYMS,
     workflows: {
