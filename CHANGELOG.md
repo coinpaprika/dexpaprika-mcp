@@ -8,6 +8,7 @@ All notable changes to the DexPaprika MCP Server will be documented in this file
 
 - **`getCapabilities` reports the real free-tier numbers instead of `free: true` / `requires_api_key: false`.** Those two booleans read as "unmetered and never needs a key", which is wrong now that paid plans exist. `stats` now carries `free_tier`, `key_required_to_start`, `free_tier_credits_per_month` (200,000 keyless per IP), `free_key_credits_per_month` (500,000), `free_tier_requests_per_minute` (30), `free_tier_max_data_delay_seconds` (15) and `pricing_url`. The `getCapabilities` output schema was updated to match, so `structuredContent` still validates.
 - README: the rate-limit section said "Free Tier Limits: 10,000 requests per day". There is no daily quota. It now states the monthly credit allowances, the per-minute rate and the 15 second free-tier data delay.
+- README: the JSON-RPC transport endpoint was listed as `https://mcp.dexpaprika.com/mcp`, which returns 404 Not found. The working path is `https://mcp.dexpaprika.com/json-rpc`; a live `tools/list` there returns the same 17 tools as the streamable-http transport.
 - README: fixed the Smithery install command and link (the `@coinpaprika/dexpaprika-mcp` slug 404s; the live listing is `coinpaprika/dexpaprika`), replaced the dead Model Context Protocol link, dropped the stale "Version 1.3.0 Update Highlights" block, and noted that self-host exposes 16 tools while the hosted server exposes 17.
 
 ## [2.3.2] - 2026-07-30

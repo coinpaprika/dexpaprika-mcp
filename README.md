@@ -92,7 +92,7 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 |-----------|----------|----------|
 | Streamable HTTP | `https://mcp.dexpaprika.com/streamable-http` | Recommended for most clients |
 | SSE | `https://mcp.dexpaprika.com/sse` | Legacy SSE transport |
-| JSON-RPC | `https://mcp.dexpaprika.com/mcp` | Direct JSON-RPC |
+| JSON-RPC | `https://mcp.dexpaprika.com/json-rpc` | Direct JSON-RPC |
 
 > **Note**: These are MCP protocol endpoints. They won't display anything in a browser. Visit [mcp.dexpaprika.com](https://mcp.dexpaprika.com) for the landing page.
 
