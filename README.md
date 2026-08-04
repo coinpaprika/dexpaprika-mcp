@@ -49,14 +49,11 @@ npx -y smithery mcp add coinpaprika/dexpaprika
 # Install globally (recommended for regular use)
 npm install -g dexpaprika-mcp
 
-# Verify installation
-dexpaprika-mcp --version
-
 # Start the server
 dexpaprika-mcp
 ```
 
-The server runs on port 8010 by default. You'll see `MCP server is running at http://localhost:8010` when successfully started.
+This is a stdio server: it speaks MCP over stdin and stdout and binds no port. On start it writes `DexPaprika MCP server v<version> (tool contract v<contract>) is running...` to stderr and then waits for a client. Run it from an MCP client (Claude Desktop, Cursor, Claude Code) rather than expecting a URL in a browser.
 
 ## Video Tutorial
 
