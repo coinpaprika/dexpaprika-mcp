@@ -2,7 +2,7 @@
 
 [![smithery badge](https://smithery.ai/badge/coinpaprika/dexpaprika)](https://smithery.ai/servers/coinpaprika/dexpaprika)
 
-A Model Context Protocol (MCP) server that provides on-demand access to DexPaprika's cryptocurrency and DEX data API. Built specifically for AI assistants like Claude to programmatically fetch real-time token, pool, and DEX data with zero configuration.
+A Model Context Protocol (MCP) server that provides on-demand access to DexPaprika's cryptocurrency and DEX data API. Built specifically for AI assistants like Claude to programmatically fetch current token, pool and DEX data with zero configuration.
 
 ## TL;DR
 
@@ -31,7 +31,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes and migration guides.
 - **DEX Comparisons**: Analyze fee structures, volume, and available pools across different DEXes
 - **Liquidity Pool Analytics**: Monitor TVL changes, impermanent loss calculations, and price impact assessments
 - **Market Analysis**: Cross-chain token comparisons, volume trends, and trading activity metrics
-- **Portfolio Trackers**: Real-time value tracking, historical performance analysis, yield opportunities
+- **Portfolio Trackers**: Current value tracking, historical performance analysis, yield opportunities
 - **Technical Analysis**: Perform advanced technical analysis using historical OHLCV data, including trend identification, pattern recognition, and indicator calculations
 
 ## Installation
@@ -217,7 +217,6 @@ const prices = await getTokenMultiPrices({
 - **Free tier**: 200,000 credits per month keyless per IP, 500,000 with a free API key, at 30 requests per minute. Pro is $99/month for 5,000,000 credits at 300 requests per minute. One request costs one credit; batch endpoints cost one credit per item. Current figures: https://dexpaprika.com/pricing
 - **Data delay**: up to 15 seconds on the free tier, real-time on Pro
 - **Response Time**: 100-500ms for most endpoints (network dependent)
-- **Data Freshness**: Pool and token data updated every 15-30s
 - **Error Handling**: Structured errors with codes, suggestions, and retry guidance
 - **OHLCV Data Availability**: Historical data typically available from token/pool creation date
 
