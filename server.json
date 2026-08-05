@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "com.dexpaprika/dexpaprika",
   "title": "DexPaprika",
-  "description": "Real-time DEX and on-chain data: liquidity pools, token prices, swaps, and trading volume.",
+  "description": "DEX and on-chain data: liquidity pools, token prices, swaps, and trading volume.",
   "repository": {
     "url": "https://github.com/coinpaprika/dexpaprika-mcp",
     "source": "github"
