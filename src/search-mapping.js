@@ -33,12 +33,22 @@
  * a path segment to a dex_name query param, so getDexPools routes through
  * buildPoolSearchParams too. Verified live on 2026-08-05 against
  * api.dexpaprika.com:
- *   ?dex_name=curve   -> every row has dex_id "curve"
- *   ?dex_name=Curve   -> same rows (the handler resolves id or display name)
- *   ?zzz_bogus=curve  -> unfiltered baseline, top row dex_id "makerdao"
- * The control matters because unknown query params are dropped silently and
- * still return a plausible 200. An unknown dex_name returns 200 with an empty
- * results[], not an error, the same way an unknown token_address does.
+ * Despite its name, dex_name matches the DEX id, case-insensitively. It does
+ * not match the human display name. Verified with a DEX whose display name
+ * genuinely differs from its id, because Curve alone cannot tell the two
+ * behaviours apart:
+ *   ?dex_name=curve        -> 2 rows, dex_id "curve"
+ *   ?dex_name=CURVE        -> 2 rows, dex_id "curve" (so matching ignores case)
+ *   ?dex_name=uniswap_v3   -> 2 rows, dex_id "uniswap_v3"
+ *   ?dex_name=Uniswap V3   -> 0 rows, HTTP 200 (display name, silently empty)
+ *   ?dex_name=balancer_v2  -> 2 rows, dex_id "balancer_v2"
+ *   ?dex_name=Balancer V2  -> 0 rows, HTTP 200 (display name, silently empty)
+ *   ?zzz_bogus=curve       -> unfiltered baseline, top row dex_id "makerdao"
+ * The bogus-param control matters because unknown query params are dropped
+ * silently and still return a plausible 200. Pass the dex_id field from
+ * /networks/{network}/dexes, never that response's dex_name field: a display
+ * name returns 200 with an empty results[] rather than an error, so a caller
+ * gets a plausible empty answer and no signal about why.
  */
 
 const POOL_SORT_CANONICAL = new Set([
@@ -127,8 +137,9 @@ export function buildPoolSearchParams(args) {
   if (typeof args.token_address === 'string' && args.token_address !== '') params.token_address = args.token_address;
   // dex_name restricts results to one exchange (used by getDexPools). The tool
   // still calls the argument `dex`, which the handler maps onto this key; the
-  // `dex_name` spelling is accepted directly too. Either the dex id ("curve")
-  // or the display name ("Curve") resolves; prefer the id.
+  // `dex_name` spelling is accepted directly too. The value must be the dex id
+  // ("uniswap_v3"), matched case-insensitively; a display name ("Uniswap V3")
+  // returns an empty results[] rather than an error.
   if (typeof args.dex_name === 'string' && args.dex_name !== '') params.dex_name = args.dex_name;
   for (const [legacy, canonical] of Object.entries(POOL_FILTER_PARAM)) {
     const v = args[legacy];
