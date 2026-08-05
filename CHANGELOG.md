@@ -2,7 +2,7 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
-## [Unreleased]
+## [2.3.3] - 2026-08-05
 
 ### Changed
 
