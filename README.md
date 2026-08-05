@@ -128,7 +128,7 @@ This self-host build registers 16 read tools. The hosted server at `mcp.dexpapri
 | Tool | Description | Required Parameters |
 |------|-------------|---------------------|
 | `getNetworkPools` | **PRIMARY**. Get top liquidity pools on a network | `network` |
-| `getDexPools` | Get pools from a specific DEX | `network`, `dex` |
+| `getDexPools` | Get pools from a specific DEX (rows under `results`, cursor pagination) | `network`, `dex` |
 | `getNetworkPoolsFilter` | Filter pools by volume, transactions, creation time | `network` |
 | `getPoolDetails` | Detailed pool info (price, volume, TVL, tokens) | `network`, `pool_address` |
 | `getPoolOHLCV` | Historical OHLCV candle data | `network`, `pool_address`, `start` |

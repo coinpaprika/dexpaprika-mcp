@@ -357,6 +357,12 @@ const SERVER_INSTRUCTIONS = [
   'for either. Supplying them returns a structured error with a client-side workaround. The token filter is',
   'network-scoped only; the cross-network /pools/search ignores token_address.',
   '',
+  '`getDexPools` kept its name and its `dex` argument, but the endpoint underneath changed on 2026-08-05:',
+  '/networks/{network}/dexes/{dex}/pools was removed and the tool now proxies /networks/{network}/pools/search',
+  'with a `dex_name` filter. Rows arrive under `results` with `has_next_page` + `next_cursor`, not under `pools`',
+  'with `page_info`, and the 24h volume field is `volume_usd_24h`, not `volume_usd`. `page` is superseded by',
+  '`cursor`: page 2 and above return a structured error rather than silently repeating page 1.',
+  '',
   'Pagination is 1-indexed; the server accepts `page=0` as a backward-compat alias for `page=1`.',
   '',
   '## Time formats',
@@ -488,11 +494,11 @@ const OUTPUT_SCHEMAS = {
   // strict structuredContent validation accepts real upstream shapes. The outer
   // schema is .passthrough(), so the documented key (e.g. `results`) is advertised
   // while alternate upstream keys still validate. getNetworkPools,
-  // getNetworkPoolsFilter, getTokenPools, getTopTokens, and filterNetworkTokens
-  // proxy the /pools/search and /tokens/search endpoints: they return rows under
-  // `results` with cursor pagination (has_next_page + next_cursor), not
-  // pools/tokens/data + page_info. Keeping every key optional keeps the client
-  // robust to upstream shape drift.
+  // getNetworkPoolsFilter, getDexPools, getTokenPools, getTopTokens, and
+  // filterNetworkTokens proxy the /pools/search and /tokens/search endpoints:
+  // they return rows under `results` with cursor pagination (has_next_page +
+  // next_cursor), not pools/tokens/data + page_info. Keeping every key optional
+  // keeps the client robust to upstream shape drift.
   search: {
     tokens: z.array(TokenSummary).optional(),
     pools: z.array(PoolSummary).optional(),
@@ -500,7 +506,7 @@ const OUTPUT_SCHEMAS = {
   },
 
   getNetworkDexes: { dexes: z.array(DexSummary).optional(), page_info: PageInfo.optional() },
-  getDexPools: { pools: z.array(PoolSummary).optional(), page_info: PageInfo.optional() },
+  getDexPools: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
   getTokenPools: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
   getNetworkPools: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
   getNetworkPoolsFilter: { results: z.array(PoolSummary).optional(), has_next_page: z.boolean().optional(), next_cursor: z.string().nullable().optional(), query: z.record(z.string(), z.unknown()).optional() },
@@ -737,27 +743,54 @@ registerReadTool(
 );
 
 // ─── getDexPools ─────────────────────────────────────────────────────────────
+// The upstream /networks/{network}/dexes/{dex}/pools endpoint was removed
+// (HTTP 410, replacement /networks/:network/pools/search). The pool search
+// endpoint carries a dex_name filter, so this tool proxies it through the same
+// search-mapping normalization as getNetworkPools and getTokenPools. The tool
+// name and the `dex` argument are kept so agent prompts that already know them
+// keep working; only the wire call and the response shape changed.
+//
+// Two consequences of the swap, both verified live 2026-08-05:
+//   - rows come back under `results` with has_next_page + next_cursor, not
+//     under `pools` with page_info, and the 24h volume field is now
+//     volume_usd_24h rather than volume_usd
+//   - /pools/search accepts `page` and silently ignores it (a page=3 request
+//     returns the same first row as page=1), so a page above 1 returns a
+//     structured error rather than the wrong data under a plausible 200
 registerReadTool(
   'getDexPools',
-  'Get the pools belonging to one specific DEX on one network, e.g. all Uniswap v3 pools on ethereum, returned under \'pools\' with page_info. Read-only and keyless. Narrower than getNetworkPools (a single exchange, not the whole chain). Use for \'show me Raydium pools\', \'top pairs on PancakeSwap\', or \'liquidity on Orca\'. Get the dex id from getNetworkDexes or search first. Params: network (required slug); dex (required id, e.g. \'uniswap_v3\'); limit (default 10, max 100); page (default 1); sort_by one of \'volume_usd\',\'price_usd\',\'transactions\',\'last_price_change_usd_24h\',\'created_at\' (default \'volume_usd\', alias order_by); sort_dir \'asc\'/\'desc\' (default \'desc\', alias sort).',
+  'Get the pools belonging to one specific DEX on one network, e.g. all Uniswap v3 pools on ethereum. Proxies /networks/{network}/pools/search with a dex_name filter (the old /networks/{network}/dexes/{dex}/pools endpoint was removed): rows come back under \'results\' with cursor pagination (has_next_page + next_cursor), and the 24h volume field is volume_usd_24h. Read-only and keyless. Narrower than getNetworkPools (a single exchange, not the whole chain). Use for \'show me Raydium pools\', \'top pairs on PancakeSwap\', or \'liquidity on Orca\'. Get the dex id from getNetworkDexes or search first; either the id (\'curve\') or the display name (\'Curve\') resolves, and an unknown dex returns an empty results[] rather than an error. Params: network (required slug); dex (required id, e.g. \'uniswap_v3\'; the REST API calls this query parameter dex_name); limit (default 10, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', canonical *_24h fields, short legacy names still accepted, alias order_by); sort_dir \'asc\'/\'desc\' (default \'desc\', alias sort). The old page number is gone: page 2 and above return an error pointing at cursor.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
-    dex: z.string().describe("REQUIRED: DEX identifier from getNetworkDexes (e.g., 'uniswap_v3')"),
-    page: z.coerce.number().optional().default(1).describe('OPTIONAL: Page number for pagination (default: 1, 1-indexed)'),
+    dex: z.string().describe("REQUIRED: DEX identifier from getNetworkDexes (e.g., 'uniswap_v3'). Either the dex id ('curve') or the display name ('Curve') resolves; prefer the id. An unknown value returns an empty results[], not an error. The REST API calls this parameter dex_name."),
     limit: z.coerce.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page (read `has_next_page` to know if more remain). Replaces the old page number.'),
+    page: z.coerce.number().optional().describe('SUPERSEDED: the replacement endpoint is cursor-paginated and ignores page. page=1 (or 0) still works as the first page; page=2 or above returns a structured error telling you to use cursor.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc'). The REST API calls this parameter sort."),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL: alias of sort_dir; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes sort, so use this name when calling the REST API directly.'),
-    sort_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd'). The REST API calls this parameter order_by."),
-    order_by: z.enum(['volume_usd', 'price_usd', 'transactions', 'last_price_change_usd_24h', 'created_at']).optional().describe('OPTIONAL: alias of sort_by; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes order_by, so use this name when calling the REST API directly.'),
+    sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names such as volume_usd are still accepted and normalized. The REST API calls this parameter order_by."),
+    order_by: z.enum(POOL_SORT_FIELDS).optional().describe('OPTIONAL: alias of sort_by; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes order_by, so use this name when calling the REST API directly.'),
   },
   async (args) => {
     try {
       const { network, dex } = args;
-      const page = coercePage(args.page);
-      const limit = args.limit ?? 10;
-      const direction = args.sort_dir ?? args.sort ?? 'desc';
-      const field = args.sort_by ?? args.order_by ?? 'volume_usd';
-      const endpoint = `/networks/${network}/dexes/${dex}/pools?page=${page}&limit=${limit}&sort=${direction}&order_by=${field}`;
+      // /pools/search accepts page and silently ignores it, so a page above 1
+      // would hand back page 1 under a 200 and an agent paging through would
+      // loop forever. Error instead, and point at the cursor that replaced it.
+      const page = args.page;
+      if (page !== undefined && Number(page) > 1) {
+        return errorText(buildErrorResponse(
+          ErrorCodes.DP400_UNSUPPORTED_PARAM,
+          "'page' is no longer supported: the API removed /networks/{network}/dexes/{dex}/pools and its replacement /networks/{network}/pools/search is cursor-paginated",
+          false,
+          'Retry without page to get the first page, then pass the response `next_cursor` as `cursor` for each following page while `has_next_page` is true.',
+          undefined,
+          { parameter: 'page', replacement: 'cursor' },
+        ));
+      }
+      // buildPoolSearchParams picks up dex_name, limit, cursor, and the
+      // normalized sort params from args.
+      const endpoint = `/networks/${network}/pools/search${toQueryString(buildPoolSearchParams({ ...args, dex_name: dex }))}`;
       return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
       return errorText(error);

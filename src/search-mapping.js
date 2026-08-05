@@ -27,6 +27,18 @@
  * token_address but silently ignores it), and repeating token_address does
  * not act as a pair filter; the API uses only one of the values (not
  * guaranteed by order).
+ *
+ * 2026-08-05: /networks/{network}/dexes/{dex}/pools was removed the same way
+ * (HTTP 410, replacement /networks/:network/pools/search). The DEX moves from
+ * a path segment to a dex_name query param, so getDexPools routes through
+ * buildPoolSearchParams too. Verified live on 2026-08-05 against
+ * api.dexpaprika.com:
+ *   ?dex_name=curve   -> every row has dex_id "curve"
+ *   ?dex_name=Curve   -> same rows (the handler resolves id or display name)
+ *   ?zzz_bogus=curve  -> unfiltered baseline, top row dex_id "makerdao"
+ * The control matters because unknown query params are dropped silently and
+ * still return a plausible 200. An unknown dex_name returns 200 with an empty
+ * results[], not an error, the same way an unknown token_address does.
  */
 
 const POOL_SORT_CANONICAL = new Set([
@@ -113,6 +125,11 @@ export function buildPoolSearchParams(args) {
   // token_address restricts results to pools containing that token (used by
   // getTokenPools). Network-scoped /pools/search only; see the header comment.
   if (typeof args.token_address === 'string' && args.token_address !== '') params.token_address = args.token_address;
+  // dex_name restricts results to one exchange (used by getDexPools). The tool
+  // still calls the argument `dex`, which the handler maps onto this key; the
+  // `dex_name` spelling is accepted directly too. Either the dex id ("curve")
+  // or the display name ("Curve") resolves; prefer the id.
+  if (typeof args.dex_name === 'string' && args.dex_name !== '') params.dex_name = args.dex_name;
   for (const [legacy, canonical] of Object.entries(POOL_FILTER_PARAM)) {
     const v = args[legacy];
     if (v !== undefined && v !== null) params[canonical] = v;
