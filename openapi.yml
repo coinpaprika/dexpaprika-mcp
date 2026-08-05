@@ -574,108 +574,6 @@ paths:
                   error:
                     type: string
                     example: Network not found.
-  "/networks/{network}/dexes/{dex}/pools":
-    get:
-      operationId: getDexPools
-      tags:
-        - Pools
-      summary: Get top X pools on a network's DEX.
-      description: >
-        Retrieves a paginated list of top pools on a specific network's DEX.
-
-        Supports sorting and ordering, returning essential price data and token
-        details.
-      parameters:
-        - $ref: "#/components/parameters/networkParam"
-        - $ref: "#/components/parameters/dexParam"
-        - $ref: "#/components/parameters/pageParam"
-        - $ref: "#/components/parameters/limitParam"
-        - $ref: "#/components/parameters/sortParam"
-        - $ref: "#/components/parameters/orderParam"
-      responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pools:
-                    type: array
-                    description: >-
-                      List of pools for the specified DEX, including volume and
-                      price data.
-                    items:
-                      $ref: "#/components/schemas/PoolWithPrices"
-                  page_info:
-                    type: object
-                    description: Details about the current page of results.
-                    properties:
-                      limit:
-                        type: integer
-                        description: The maximum number of items returned per page.
-                      page:
-                        type: integer
-                        description: The current page number.
-                      total_items:
-                        type: integer
-                        description: The total number of items matching the query.
-                      total_pages:
-                        type: integer
-                        description: The total number of pages available.
-              example:
-                pools:
-                  - id: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640"
-                    dex_id: "0x1f98431c8ad98523631ae4a59f267346ea31f984"
-                    dex_name: Uniswap V3
-                    chain: ethereum
-                    volume_usd: 584196007.0865604
-                    created_at: "2021-05-05T21:42:11.000Z"
-                    created_at_block_number: 12376729
-                    transactions: 8808
-                    price_usd: 1.000038420407992
-                    last_price_change_usd_5m: 0.2817344833094529
-                    last_price_change_usd_1h: -0.11886943575265935
-                    last_price_change_usd_24h: 0.06894442872697064
-                    fee: 0
-                    tokens:
-                      - id: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-                        name: USD Coin
-                        symbol: USDC
-                        chain: ethereum
-                        decimals: 6
-                        added_at: "2024-12-02T13:00:16.000Z"
-                      - id: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
-                        name: Wrapped Ether
-                        symbol: WETH
-                        chain: ethereum
-                        decimals: 18
-                        added_at: "2024-12-02T13:00:16.000Z"
-                page_info:
-                  limit: 10
-                  page: 1
-                  total_items: 880
-                  total_pages: 88
-        "400":
-          description: The specified network or dex is invalid.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Invalid network or DEX.
-        "404":
-          description: Network or DEX not found.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: DEX not found on this network.
   "/networks/{network}/pools/{pool_address}":
     get:
       operationId: getPoolDetails
@@ -2044,17 +1942,6 @@ components:
         Network slug or ID (e.g., 'solana'). You can find the list of supported
         networks with their IDs here: [/networks](/api-reference/networks).
       example: solana
-    dexParam:
-      name: dex
-      in: path
-      required: true
-      schema:
-        type: string
-      description: >-
-        DEX identifier or name (e.g., 'uniswap_v2'). You can find the list of
-        supported DEXes with their IDs here:
-        [/networks/{network}/dexes](/api-reference/dexes).
-      example: uniswap_v2
     poolAddressParam:
       name: pool_address
       in: path
