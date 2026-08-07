@@ -108,6 +108,11 @@ const TOKEN_FILTER_PARAM = {
   fdv_min: 'fdv_min',
   fdv_max: 'fdv_max',
   txns_24h_min: 'txns_24h_min',
+  // The 24h window is the only price-change bound tokens/search honours. The
+  // shorter ones are absent from token rows and are ignored if sent, so they
+  // are deliberately not listed here.
+  price_change_percentage_24h_min: 'price_change_percentage_24h_min',
+  price_change_percentage_24h_max: 'price_change_percentage_24h_max',
   created_after: 'created_after',
   created_before: 'created_before',
 };
