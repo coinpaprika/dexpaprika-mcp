@@ -9,7 +9,7 @@ const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').versio
 // Sort-field values accepted by the pool/token tools. Canonical *_24h names are
 // what /pools/search and /tokens/search use; the trailing short names are legacy
 // aliases kept for back-compat and normalized in search-mapping.js.
-const POOL_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'price_usd', 'price_change_percentage_24h', 'volume_usd', 'transactions', 'last_price_change_usd_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'liquidity'];
+const POOL_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'price_usd', 'price_change_percentage_24h', 'price_change_percentage_6h', 'price_change_percentage_1h', 'price_change_percentage_5m', 'volume_usd', 'transactions', 'last_price_change_usd_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'liquidity'];
 const TOKEN_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'fdv_usd', 'created_at', 'price_change_percentage_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'txns', 'price_change', 'fdv', 'price_usd'];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -780,6 +780,17 @@ registerReadTool(
     liquidity_usd_min: z.coerce.number().optional().describe('OPTIONAL: Minimum pool liquidity in USD'),
     liquidity_usd_max: z.coerce.number().optional().describe('OPTIONAL: Maximum pool liquidity in USD'),
     txns_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
+    // All four price-change windows filter. Verified live against a
+    // garbage-named control, so a silently-dropped parameter could not pass for
+    // a working one.
+    price_change_percentage_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 24h price change, in percent. Negatives are allowed, so -20 finds pools down at least 20%.'),
+    price_change_percentage_24h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 24h price change, in percent'),
+    price_change_percentage_6h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 6h price change, in percent'),
+    price_change_percentage_6h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 6h price change, in percent'),
+    price_change_percentage_1h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 1h price change, in percent'),
+    price_change_percentage_1h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 1h price change, in percent'),
+    price_change_percentage_5m_min: z.coerce.number().optional().describe("OPTIONAL: Minimum 5m price change, in percent. The shortest window we carry, so it is the one to reach for on 'what is moving right now'."),
+    price_change_percentage_5m_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 5m price change, in percent'),
     created_after: z.coerce.number().optional().describe('OPTIONAL: Only pools created after this UNIX timestamp'),
     created_before: z.coerce.number().optional().describe('OPTIONAL: Only pools created before this UNIX timestamp'),
     sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted. The REST API calls this parameter order_by."),
