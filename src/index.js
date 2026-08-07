@@ -1000,7 +1000,7 @@ registerReadTool(
 // ─── filterNetworkTokens ─────────────────────────────────────────────────────
 registerReadTool(
   'filterNetworkTokens',
-  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, created_after/created_before (Unix timestamps). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, price_change_percentage_24h_min/max, created_after/created_before (Unix timestamps). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -1012,6 +1012,8 @@ registerReadTool(
     fdv_min: z.coerce.number().optional().describe('OPTIONAL: Minimum fully diluted valuation in USD'),
     fdv_max: z.coerce.number().optional().describe('OPTIONAL: Maximum fully diluted valuation in USD'),
     txns_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
+    price_change_percentage_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 24h price change, in percent. Negatives are allowed, so -20 finds tokens down at least 20%. This is the only price-change window tokens carry; for 6h, 1h or 5m use getNetworkPoolsFilter.'),
+    price_change_percentage_24h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 24h price change, in percent'),
     created_after: z.coerce.number().optional().describe('OPTIONAL: Only tokens created after this UNIX timestamp'),
     created_before: z.coerce.number().optional().describe('OPTIONAL: Only tokens created before this UNIX timestamp'),
     sort_by: z.enum(TOKEN_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical names; short legacy names are still accepted. The REST API calls this parameter order_by."),
