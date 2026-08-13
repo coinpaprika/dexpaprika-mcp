@@ -132,7 +132,7 @@ function buildErrorResponse(code, message, retryable, suggestion, correctedExamp
 
 // Defensively parse a deprecation hint out of an error response body. The API
 // signals a removed/moved endpoint with a JSON body of the shape
-// { "code": 410, "message": "endpoint removed", "replacement": "/networks/:network/pools/search" }.
+// { "code": 410, "message": "endpoint removed", "replacement": "/networks/{network}/pools/search" }.
 // We key on the presence of a string "replacement" field so ANY future
 // deprecation self-documents (not just 410, not hardcoded to any endpoint).
 // Returns null when the body is missing, not JSON, or has no usable replacement,
@@ -744,7 +744,7 @@ registerReadTool(
 
 // ─── getDexPools ─────────────────────────────────────────────────────────────
 // The upstream /networks/{network}/dexes/{dex}/pools endpoint was removed
-// (HTTP 410, replacement /networks/:network/pools/search). The pool search
+// (HTTP 410, replacement /networks/{network}/pools/search). The pool search
 // endpoint carries a dex_name filter, so this tool proxies it through the same
 // search-mapping normalization as getNetworkPools and getTokenPools. The tool
 // name and the `dex` argument are kept so agent prompts that already know them
@@ -934,7 +934,7 @@ registerReadTool(
 
 // ─── getTokenPools ───────────────────────────────────────────────────────────
 // The upstream /networks/{network}/tokens/{token_address}/pools endpoint was
-// removed (HTTP 410, replacement /networks/:network/pools/search). The pool
+// removed (HTTP 410, replacement /networks/{network}/pools/search). The pool
 // search endpoint gained a token_address filter, so this tool proxies it via
 // the same search-mapping normalization as getNetworkPools. The old
 // inversed/reorder and paired_token_address/address params have NO equivalent

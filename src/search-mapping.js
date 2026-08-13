@@ -19,7 +19,7 @@
  * does not support price_usd ordering (400), so it falls back to volume.
  *
  * 2026-07-15: /networks/{network}/tokens/{token_address}/pools was removed the
- * same way (HTTP 410, replacement /networks/:network/pools/search). The pool
+ * same way (HTTP 410, replacement /networks/{network}/pools/search). The pool
  * search endpoint gained a token_address query param that restricts results to
  * pools containing that token, so getTokenPools routes through
  * buildPoolSearchParams too. Two caveats, both verified live (2026-07-15):
@@ -29,7 +29,7 @@
  * guaranteed by order).
  *
  * 2026-08-05: /networks/{network}/dexes/{dex}/pools was removed the same way
- * (HTTP 410, replacement /networks/:network/pools/search). The DEX moves from
+ * (HTTP 410, replacement /networks/{network}/pools/search). The DEX moves from
  * a path segment to a dex_name query param, so getDexPools routes through
  * buildPoolSearchParams too. Verified live on 2026-08-05 against
  * api.dexpaprika.com:
