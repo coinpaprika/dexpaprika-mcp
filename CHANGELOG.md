@@ -2,6 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.3.4] - 2026-08-13
+
+### Changed
+- README no longer states the monthly free-tier quotas. They changed on 2026-08-11 (keyless 400K to 50K, free key 500K to 300K) and the published README is frozen into each tarball, so a hard-coded figure goes stale the moment it ships. The page now links https://dexpaprika.com/api/pricing, which is the canonical URL; the previous link to /pricing was a 301.
+
 ## [2.3.3] - 2026-08-05
 
 ### Changed

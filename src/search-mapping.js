@@ -51,9 +51,14 @@
  * gets a plausible empty answer and no signal about why.
  */
 
+// Must match the enum the REST layer returns in its 400 body. A field missing
+// here does not error: mapPoolSortField falls through to volume_usd_24h, so the
+// caller gets a successful response sorted by something they did not ask for.
 const POOL_SORT_CANONICAL = new Set([
   'volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd',
-  'txns_24h', 'created_at', 'price_usd', 'price_change_percentage_24h',
+  'txns_24h', 'created_at', 'price_usd',
+  'price_change_percentage_24h', 'price_change_percentage_6h',
+  'price_change_percentage_1h', 'price_change_percentage_5m',
 ]);
 
 const POOL_SORT_LEGACY = {
@@ -103,6 +108,16 @@ const POOL_FILTER_PARAM = {
   liquidity_usd_min: 'liquidity_usd_min',
   liquidity_usd_max: 'liquidity_usd_max',
   txns_24h_min: 'txns_24h_min',
+  // Identity mappings, but they must be listed: this map is a whitelist, and a
+  // parameter missing from it is dropped before the request leaves.
+  price_change_percentage_24h_min: 'price_change_percentage_24h_min',
+  price_change_percentage_24h_max: 'price_change_percentage_24h_max',
+  price_change_percentage_6h_min: 'price_change_percentage_6h_min',
+  price_change_percentage_6h_max: 'price_change_percentage_6h_max',
+  price_change_percentage_1h_min: 'price_change_percentage_1h_min',
+  price_change_percentage_1h_max: 'price_change_percentage_1h_max',
+  price_change_percentage_5m_min: 'price_change_percentage_5m_min',
+  price_change_percentage_5m_max: 'price_change_percentage_5m_max',
   created_after: 'created_after',
   created_before: 'created_before',
 };
@@ -115,6 +130,11 @@ const TOKEN_FILTER_PARAM = {
   fdv_min: 'fdv_min',
   fdv_max: 'fdv_max',
   txns_24h_min: 'txns_24h_min',
+  // The 24h window is the only price-change bound tokens/search honours. The
+  // shorter ones are absent from token rows and are ignored if sent, so they
+  // are deliberately not listed here.
+  price_change_percentage_24h_min: 'price_change_percentage_24h_min',
+  price_change_percentage_24h_max: 'price_change_percentage_24h_max',
   created_after: 'created_after',
   created_before: 'created_before',
 };
