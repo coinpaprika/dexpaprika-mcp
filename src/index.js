@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { createRequire } from 'module';
 import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
+import { buildHeaders, parseRetryAfterSeconds, resolveApiKey, resolveBaseUrl } from './http-config.js';
 
 const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
 
@@ -19,11 +20,36 @@ const TOKEN_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 
 // instructions and version match the worker.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Base URL for DexPaprika API. DexPaprika is fully free: no API key, no auth header.
-const API_BASE_URL = 'https://api.dexpaprika.com';
+// Base URL for DexPaprika API.
+//
+// Keyless works and stays the default: no key, no signup, nothing to configure.
+// Setting DEXPAPRIKA_API_KEY raises the monthly allowance and opens streaming on
+// any token. The host does NOT change when a key is present: free keys are served
+// here, and only Pro moves to api-pro.dexpaprika.com.
+const API_BASE_URL = resolveBaseUrl();
 
 // Server version — matches the hosted worker.
 const SERVER_VERSION = '2.0.0';
+
+// Which MCP client we are talking to, learned from the initialize handshake and
+// forwarded in the User-Agent. Stays null until the handshake completes, and the
+// User-Agent simply omits the segment while it is unknown rather than guessing.
+let mcpClient = null;
+
+function currentHeaders() {
+  // getClientVersion() returns undefined until the initialize handshake lands,
+  // so this resolves on first use rather than at startup. Guarded because it is
+  // reaching through the SDK's public-but-nested surface for a nice-to-have.
+  if (mcpClient === null) {
+    try {
+      const info = server?.server?.getClientVersion?.();
+      if (info?.name) mcpClient = { name: info.name, version: info.version };
+    } catch {
+      // Identification is optional. Never let it break a data call.
+    }
+  }
+  return buildHeaders({ version: PACKAGE_VERSION, client: mcpClient });
+}
 
 // Server identity (inlined from the worker's server-identity.ts).
 const SERVER_CANONICAL_NAME = 'dexpaprika';
@@ -121,6 +147,7 @@ const ErrorCodes = {
   DP400_UNSUPPORTED_PARAM: 'DP400_UNSUPPORTED_PARAM',
   DP404_NOT_FOUND: 'DP404_NOT_FOUND',
   DP429_RATE_LIMIT: 'DP429_RATE_LIMIT',
+  DP402_QUOTA_EXHAUSTED: 'DP402_QUOTA_EXHAUSTED',
 };
 
 function buildErrorResponse(code, message, retryable, suggestion, correctedExample, metadata) {
@@ -152,7 +179,7 @@ function parseDeprecationHint(body) {
   return { replacement, apiMessage };
 }
 
-function parseAPIError(status, statusText, endpoint, body) {
+function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
   // Generic, self-documenting deprecation handling: if the error body carries a
   // "replacement" hint, surface BOTH the API message and the replacement path,
   // for ANY error status. Keeps the DP<status>_ERROR code structure.
@@ -199,17 +226,48 @@ function parseAPIError(status, statusText, endpoint, body) {
   }
 
   if (status === 429) {
-    const resetTime = new Date();
-    resetTime.setHours(24, 0, 0, 0);
+    // This is the PER-MINUTE request limit, not the monthly credit allowance.
+    // Until 2026-08-14 this branch reported a "daily" limit and told the caller
+    // to wait until local midnight, which for an agent meant giving up for hours
+    // on a limit that clears in seconds. Honour the server's own Retry-After.
+    const retryAfterSeconds = parseRetryAfterSeconds(responseHeaders);
     return buildErrorResponse(
       ErrorCodes.DP429_RATE_LIMIT,
-      'Daily rate limit exceeded',
+      'Per-minute request limit exceeded',
       true,
-      'Wait until rate limit resets or use cached data',
+      retryAfterSeconds === null
+        ? 'Wait a few seconds and retry. This is a per-minute limit, so it clears on its own; it is not the monthly credit allowance running out.'
+        : `Wait ${retryAfterSeconds}s and retry, then pace requests below the limit. This is a per-minute limit, not the monthly credit allowance.`,
+      'getTokenMultiPrices({ network, tokens: [a, b, c] })  // up to 10 per request',
+      {
+        limit_type: 'requests_per_minute',
+        // Null rather than invented: a made-up number is what produced the
+        // wait-until-midnight advice this replaces.
+        retry_after_seconds: retryAfterSeconds,
+        // Deliberately no "register for more" hint here. A free API key raises
+        // the monthly allowance and opens streaming, but it does NOT raise the
+        // per-minute limit, so suggesting it at this moment would be false.
+        reduce_request_count: 'Batch up to 10 tokens per call with getTokenMultiPrices, or stream instead of polling.',
+      },
+    );
+  }
+
+  if (status === 402) {
+    // Monthly credit allowance exhausted. Unlike 429, a free key genuinely does
+    // help here: it raises the ceiling from the keyless allowance.
+    const keyed = resolveApiKey() !== null;
+    return buildErrorResponse(
+      ErrorCodes.DP402_QUOTA_EXHAUSTED,
+      'Monthly credit allowance exhausted',
+      false,
+      keyed
+        ? 'This key has spent its monthly credits. The allowance resets at the start of the next period, and the response body carries the current upgrade options.'
+        : 'Running keyless. A free API key raises the monthly allowance well above the keyless tier and takes no card: set DEXPAPRIKA_API_KEY and restart. Current limits: https://docs.dexpaprika.com/knowledge-base/rate-limits',
       undefined,
       {
-        reset_at: resetTime.toISOString(),
-        retry_after_seconds: Math.floor((resetTime.getTime() - Date.now()) / 1000),
+        limit_type: 'monthly_credits',
+        using_api_key: keyed,
+        endpoint,
       },
     );
   }
@@ -245,7 +303,7 @@ async function fetchFromAPI(endpoint) {
   // canonical network IDs. No-op for already-canonical IDs and non-/networks paths.
   endpoint = normalizeNetworkPath(endpoint);
   const url = `${API_BASE_URL}${endpoint}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { headers: currentHeaders() });
   if (!response.ok) {
     // Read the error body so a deprecation hint (a "replacement" field) can be
     // surfaced to the caller. Defensive: the body may be empty or non-JSON, in
@@ -258,7 +316,7 @@ async function fetchFromAPI(endpoint) {
     }
     console.error(`[upstream] url=${url} http_status=${response.status} text="${response.statusText}"`);
     // Preserve the package's structured error contract.
-    throw parseAPIError(response.status, response.statusText, endpoint, body);
+    throw parseAPIError(response.status, response.statusText, endpoint, body, response.headers);
   }
   return response.json();
 }
@@ -628,6 +686,55 @@ const server = new McpServer(
   },
   {
     instructions: SERVER_INSTRUCTIONS,
+  },
+);
+
+// ─── getKeyStatus ────────────────────────────────────────────────────────────
+// Answers "is my key actually being used?", which on this API you cannot tell
+// from a normal call: the data endpoints ignore an unreadable key and serve the
+// keyless tier with a 200, so a wrong header name looks exactly like success.
+// /usage is the one endpoint that reports the truth.
+server.registerTool(
+  'getKeyStatus',
+  {
+    description:
+      'Report whether this server is sending an API key and which plan the API sees. '
+      + 'Use when calls are being rate limited or refused, or when the user asks whether '
+      + 'their DexPaprika key is working. Takes no arguments and reads no market data.',
+    inputSchema: {},
+    annotations: ANNOTATIONS_READ_ONLY,
+  },
+  async () => {
+    const configured = resolveApiKey() !== null;
+    try {
+      const usage = await fetchFromAPI('/usage');
+      const plan = typeof usage?.plan === 'string' ? usage.plan : null;
+      return jsonText({
+        api_key_configured: configured,
+        key_source: configured ? 'DEXPAPRIKA_API_KEY environment variable' : null,
+        plan_reported_by_api: plan,
+        // The one case worth calling out loudly: a key is set but the API still
+        // sees an anonymous caller, so the key is not reaching us at all.
+        key_reaching_api: configured ? plan !== null && plan !== 'keyless' : false,
+        diagnosis: !configured
+          ? 'No key configured. Running keyless, which works and needs no signup. Set DEXPAPRIKA_API_KEY to raise the monthly allowance and open streaming on any token.'
+          : plan === 'keyless'
+            ? 'A key is configured but the API still reports the keyless plan, so it is not reaching us. Check the variable name is exactly DEXPAPRIKA_API_KEY and that the value is the key on its own.'
+            : `Key is working. The API reports plan "${plan}".`,
+        usage,
+      });
+    } catch (error) {
+      // A 401 here is itself the answer: the key arrived and was rejected.
+      return jsonText({
+        api_key_configured: configured,
+        plan_reported_by_api: null,
+        key_reaching_api: false,
+        diagnosis: configured
+          ? 'The key reached the API and was rejected. The most common cause by far is a scheme word: the key must be the entire Authorization value, with no "Bearer" in front. Otherwise check for a truncated paste.'
+          : 'Could not read usage. The server is running keyless, which is the default and needs no key.',
+        error: error && typeof error === 'object' && 'error' in error ? error.error : String(error),
+      });
+    }
   },
 );
 

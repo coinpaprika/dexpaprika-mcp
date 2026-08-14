@@ -81,6 +81,46 @@ Add the following to your Claude Desktop configuration file:
 
 After restarting Claude Desktop, the DexPaprika tools will be available to Claude automatically.
 
+### Optional: using an API key
+
+**This works without a key and always will.** No signup, no card, nothing to
+configure. Everything above is the supported way to run it.
+
+A free key raises the monthly allowance and opens streaming on any token rather
+than the public showcase set. It does **not** raise the per-minute request
+limit, which is the same on both tiers. Get one at
+[console.dexpaprika.com](https://console.dexpaprika.com); current limits are on
+the [rate limits page](https://docs.dexpaprika.com/knowledge-base/rate-limits).
+
+```json
+{
+  "mcpServers": {
+    "dexpaprika": {
+      "command": "npx",
+      "args": ["dexpaprika-mcp@latest"],
+      "env": {
+        "DEXPAPRIKA_API_KEY": "your_key_here"
+      }
+    }
+  }
+}
+```
+
+**The key goes in on its own. There is no `Bearer` prefix**, and no other scheme
+word either. Paste the key exactly as issued. Almost every other API wants the
+opposite, so this is the single most common reason a working key looks broken.
+
+Two things worth knowing:
+
+- **A key we cannot read does not produce an error.** The data endpoints ignore
+  an unreadable key and serve you as an anonymous caller, with a normal `200` and
+  real data, so a typo looks exactly like success. Ask the assistant to run
+  `getKeyStatus` after setting one: it reports which plan the API actually sees
+  and names the likely cause when the key is not landing.
+- **Pro customers** additionally set `DEXPAPRIKA_API_BASE_URL` to
+  `https://api-pro.dexpaprika.com`. The host does not change automatically,
+  because sending a free key to that host returns 403.
+
 ### Hosted server (no installation)
 
 If you prefer zero setup, point any MCP-compatible client directly at the hosted server at [mcp.dexpaprika.com](https://mcp.dexpaprika.com). The landing page provides setup instructions and documentation. The following transport endpoints are available:
@@ -104,9 +144,9 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 }
 ```
 
-## Available Tools (16)
+## Available Tools (17)
 
-This self-host build registers 16 read tools. The hosted server at `mcp.dexpaprika.com` registers 17: the same 16 plus `submitFeedback`. Verify either with a live `tools/list`.
+This self-host build registers 17 read tools: 16 market-data tools plus `getKeyStatus`. The hosted server at `mcp.dexpaprika.com` registers its own set including `submitFeedback`. Verify either with a live `tools/list`.
 
 ### Discovery
 
@@ -116,6 +156,7 @@ This self-host build registers 16 read tools. The hosted server at `mcp.dexpapri
 | `getNetworks` | List every supported blockchain network (36) |
 | `getStats` | High-level ecosystem stats (total networks, DEXes, pools, tokens) |
 | `search` | Search tokens, pools, and DEXes across ALL networks by name, symbol, or address |
+| `getKeyStatus` | Whether a key is being sent and which plan the API sees. Reads no market data. |
 
 ### DEX Operations
 
