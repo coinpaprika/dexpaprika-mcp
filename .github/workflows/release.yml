@@ -1,0 +1,57 @@
+name: Release
+
+# Cut a GitHub Release whenever a v* tag is pushed.
+#
+# Why this exists: tags were being pushed without releases, so every repo's
+# front page advertised a version months behind what npm, PyPI, Packagist and
+# the Go proxy were actually serving. dexpaprika-mcp showed v2.3.2 while npm
+# served 2.4.0. Registries that score on release freshness, Glama among them,
+# read the release, not the tag.
+
+on:
+  push:
+    tags: ["v*"]
+
+# Read-only by default; the job below widens to write for this one step.
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull the CHANGELOG section for this tag
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          # Matches "## [1.7.0] - date" and "## 1.7.0 - date" alike.
+          awk -v v="$v" '
+            !f && $0 ~ ("^## \\[?" v "\\]?([^0-9.]|$)") { f=1; next }
+            f && /^## / { exit }
+            f { print }
+          ' CHANGELOG.md > notes.md
+          # Refuse to publish empty notes. An unreleased-only CHANGELOG is a
+          # real mistake: dexpaprika-sdk-go was tagged v1.7.0 while its
+          # CHANGELOG still filed the work under [Unreleased].
+          if [ ! -s notes.md ] || ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::No CHANGELOG section for ${v}. Add a '## [${v}]' heading before tagging." >&2
+            exit 1
+          fi
+          echo "--- notes for ${v} ---"
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            --verify-tag \
+            --latest
