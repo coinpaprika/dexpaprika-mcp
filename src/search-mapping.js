@@ -19,7 +19,7 @@
  * does not support price_usd ordering (400), so it falls back to volume.
  *
  * 2026-07-15: /networks/{network}/tokens/{token_address}/pools was removed the
- * same way (HTTP 410, replacement /networks/:network/pools/search). The pool
+ * same way (HTTP 410, replacement /networks/{network}/pools/search). The pool
  * search endpoint gained a token_address query param that restricts results to
  * pools containing that token, so getTokenPools routes through
  * buildPoolSearchParams too. Two caveats, both verified live (2026-07-15):
@@ -27,6 +27,28 @@
  * token_address but silently ignores it), and repeating token_address does
  * not act as a pair filter; the API uses only one of the values (not
  * guaranteed by order).
+ *
+ * 2026-08-05: /networks/{network}/dexes/{dex}/pools was removed the same way
+ * (HTTP 410, replacement /networks/{network}/pools/search). The DEX moves from
+ * a path segment to a dex_name query param, so getDexPools routes through
+ * buildPoolSearchParams too. Verified live on 2026-08-05 against
+ * api.dexpaprika.com:
+ * Despite its name, dex_name matches the DEX id, case-insensitively. It does
+ * not match the human display name. Verified with a DEX whose display name
+ * genuinely differs from its id, because Curve alone cannot tell the two
+ * behaviours apart:
+ *   ?dex_name=curve        -> 2 rows, dex_id "curve"
+ *   ?dex_name=CURVE        -> 2 rows, dex_id "curve" (so matching ignores case)
+ *   ?dex_name=uniswap_v3   -> 2 rows, dex_id "uniswap_v3"
+ *   ?dex_name=Uniswap V3   -> 0 rows, HTTP 200 (display name, silently empty)
+ *   ?dex_name=balancer_v2  -> 2 rows, dex_id "balancer_v2"
+ *   ?dex_name=Balancer V2  -> 0 rows, HTTP 200 (display name, silently empty)
+ *   ?zzz_bogus=curve       -> unfiltered baseline, top row dex_id "makerdao"
+ * The bogus-param control matters because unknown query params are dropped
+ * silently and still return a plausible 200. Pass the dex_id field from
+ * /networks/{network}/dexes, never that response's dex_name field: a display
+ * name returns 200 with an empty results[] rather than an error, so a caller
+ * gets a plausible empty answer and no signal about why.
  */
 
 // Must match the enum the REST layer returns in its 400 body. A field missing
@@ -133,6 +155,12 @@ export function buildPoolSearchParams(args) {
   // token_address restricts results to pools containing that token (used by
   // getTokenPools). Network-scoped /pools/search only; see the header comment.
   if (typeof args.token_address === 'string' && args.token_address !== '') params.token_address = args.token_address;
+  // dex_name restricts results to one exchange (used by getDexPools). The tool
+  // still calls the argument `dex`, which the handler maps onto this key; the
+  // `dex_name` spelling is accepted directly too. The value must be the dex id
+  // ("uniswap_v3"), matched case-insensitively; a display name ("Uniswap V3")
+  // returns an empty results[] rather than an error.
+  if (typeof args.dex_name === 'string' && args.dex_name !== '') params.dex_name = args.dex_name;
   for (const [legacy, canonical] of Object.entries(POOL_FILTER_PARAM)) {
     const v = args[legacy];
     if (v !== undefined && v !== null) params[canonical] = v;

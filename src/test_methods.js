@@ -50,7 +50,7 @@ async function runTests() {
   await testEndpoint('getNetworkPools (Ethereum)', '/networks/ethereum/pools/search?order_by=volume_usd_24h&limit=5');
   await testEndpoint('getNetworkPools (Solana)', '/networks/solana/pools/search?order_by=volume_usd_24h&limit=5');
   await testEndpoint('getNetworkPoolsFilter', '/networks/ethereum/pools/search?liquidity_usd_min=1000000&order_by=volume_usd_24h&limit=5');
-  await testEndpoint('getDexPools', '/networks/ethereum/dexes/uniswap_v3/pools');
+  await testEndpoint('getDexPools', '/networks/ethereum/pools/search?dex_name=uniswap_v3&order_by=volume_usd_24h&limit=5');
   await testEndpoint('getPoolDetails', '/networks/ethereum/pools/0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640');
   await testEndpoint('getTokenDetails', '/networks/ethereum/tokens/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48');
   await testEndpoint('getTokenPools', '/networks/ethereum/pools/search?token_address=0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2&order_by=volume_usd_24h&limit=5');
