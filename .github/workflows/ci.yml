@@ -34,5 +34,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Unit and wire tests
+        run: npm run test:unit
+
       - name: MCP smoke (initialize + tools/list)
         run: node .github/smoke.mjs

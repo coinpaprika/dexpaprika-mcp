@@ -14,7 +14,8 @@
     "watch": "nodemon --watch src --exec npm start",
     "test": "node src/test.js",
     "test:api": "node src/test_methods.js",
-    "test:mcp": "node src/test_mcp_client.js"
+    "test:mcp": "node src/test_mcp_client.js",
+    "test:unit": "node --test test/*.test.js"
   },
   "keywords": [
     "mcp",
