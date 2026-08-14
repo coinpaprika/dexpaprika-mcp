@@ -2,6 +2,17 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.4.0] - 2026-08-14
+
+### Breaking
+- `getDexPools` no longer calls `GET /networks/{network}/dexes/{dex}/pools`. That endpoint was removed from the API and answers HTTP 410, so the tool returned an error for every caller. It now proxies `GET /networks/{network}/pools/search` with the DEX passed as the `dex_name` query parameter.
+- The response shape follows the replacement endpoint: rows arrive under `results` instead of `pools`, pagination is `has_next_page` and `next_cursor` instead of `page_info`, and 24h volume is `volume_usd_24h` instead of `volume_usd`. The output schema, tool description and server instructions all state this, so an agent reading `tools/list` gets the new shape.
+- `page` is kept in the schema but the replacement endpoint ignores it. `page=1` (or 0) works as the first page; `page=2` or above returns a structured error pointing at `cursor`, rather than silently handing back page 1 forever.
+
+### Notes
+- Despite its name, `dex_name` matches the DEX **id**, case-insensitively, not the human display name. Pass the `dex_id` field from `getNetworkDexes` (`uniswap_v3`), not that response's `dex_name` field (`Uniswap V3`). A display name returns HTTP 200 with an empty `results[]` rather than an error, so a wrong value looks like a real but empty answer.
+- The retired endpoint is gone from `openapi.yml`.
+
 ## [2.3.4] - 2026-08-13
 
 ### Changed
