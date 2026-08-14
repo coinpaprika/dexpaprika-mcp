@@ -2,6 +2,26 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.5.0] - 2026-08-14
+
+### Added
+- **Optional API key.** Set `DEXPAPRIKA_API_KEY` and the server sends it. Keyless is and remains the default: with nothing configured the outbound request is what it always was, plus a User-Agent. The key is the **entire** `Authorization` value, with no `Bearer` prefix and no other scheme word, because the API checksums the raw header and nothing strips a scheme off the front. That is the most common reason a working key looks broken, so it is pinned by tests at two levels rather than left to review.
+- **`DEXPAPRIKA_API_BASE_URL`** for Pro customers, who are served on `api-pro.dexpaprika.com`. The host is never inferred from the presence of a key: free keys are served on the default host and sending one to api-pro returns 403, so guessing would break exactly the people who just registered.
+- **`getKeyStatus`**, a new tool that takes no arguments and reads no market data. It exists because on this API you cannot tell from a normal call whether your key works: the data endpoints ignore an unreadable key and serve the keyless tier with a `200` and real data, so a typo looks exactly like success. `/usage` is the only endpoint that reports the truth, and the tool turns it into an answer with a named cause.
+- **User-Agent** on every request: `dexpaprika-mcp/<version> (node/<v>; <platform>; client=<mcp client>)`. The client segment comes from the initialize handshake and is omitted rather than guessed when unknown. Previously the package called `fetch(url)` with no second argument and therefore sent no User-Agent at all.
+
+### Fixed
+- **The 429 handler was giving agents bad advice.** It reported a *daily* rate limit and computed the retry time by rounding up to local midnight, ignoring the `Retry-After` the server sends. The limit is per-minute and clears in seconds, so an agent that believed this could abandon a task for hours over something that resolves immediately. It now reports the per-minute limit and honours the server's header, or returns `null` and says it does not know rather than inventing a number.
+- **`getCapabilities` was publishing retired quota figures.** It reported 200,000 keyless and 500,000 free-key credits; those changed on 2026-08-11 to 50,000 and 300,000. Version 2.3.4 corrected the README for exactly this reason and missed this document, which is worse because agents read it and act on it. A `limits_url` field now points at the live rate-limits page and takes precedence over anything frozen into a tarball.
+- **`getCapabilities` reported `tools_count: 16`**, hand-typed and wrong the moment a tool was added. It is now derived from the tools actually registered, with a test that fails if the two ever disagree.
+- `pricing_url` pointed at `https://dexpaprika.com/pricing`, which is a 301. It now points at the destination, `https://dexpaprika.com/api/pricing`.
+
+### Added (errors)
+- **402 handling.** Previously fell through to a generic "check the documentation" message. It now separates the monthly credit allowance from the per-minute limit and, when running keyless, points at a free key. Deliberately absent from the 429 path: a free key raises the monthly allowance but not the per-minute rate, so suggesting registration at that moment would be false.
+
+### Testing
+- 40 tests across four files, wired into CI ahead of the existing smoke check on node 18, 20 and 22. Unit coverage of the bare-key format against five scheme words, keyless behaviour, header injection through both the key and a hostile MCP client name, and the host rules; full coverage of `Retry-After` parsing including a guard that the multi-hour value cannot return; wire tests that spawn the built server over stdio against a recording origin and assert on the request that actually leaves the process; and capability tests pinning the advertised numbers against reality.
+
 ## [2.4.0] - 2026-08-14
 
 ### Breaking

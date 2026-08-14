@@ -539,6 +539,7 @@ const OUTPUT_SCHEMAS = {
       free_key_credits_per_month: z.number(),
       free_tier_requests_per_minute: z.number(),
       free_tier_max_data_delay_seconds: z.number(),
+      limits_url: z.string().describe('Live source for the quota and rate figures above, which change.'),
       pricing_url: z.string(),
     }).passthrough(),
     network_synonyms: z.record(z.string(), z.array(z.string())).describe('Canonical network id -> common alternates an agent might try.'),
@@ -632,18 +633,24 @@ function buildCapabilitiesDocument() {
     name: SERVER_CANONICAL_NAME,
     aliases: SERVER_ALIASES,
     server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
-    tools_count: 16,
+    tools_count: TOOL_COUNT,
     stats: {
       networks: 36,
       tokens_approx: 33_000_000,
       pools_approx: 36_000_000,
       free_tier: true,             // a free tier exists; it is metered, not unlimited
       key_required_to_start: false,
-      free_tier_credits_per_month: 200_000,        // keyless, per IP
-      free_key_credits_per_month: 500_000,         // with a free API key
-      free_tier_requests_per_minute: 30,
+      // These four move. They last changed on 2026-08-11 (keyless 400K -> 50K,
+      // free key 500K -> 300K) and this document is frozen into each published
+      // tarball, so an agent that treats them as current will eventually be
+      // wrong. limits_url is the live source and takes precedence over anything
+      // hard-coded here.
+      free_tier_credits_per_month: 50_000,         // keyless, per IP
+      free_key_credits_per_month: 300_000,         // with a free API key
+      free_tier_requests_per_minute: 30,           // same on both free tiers
       free_tier_max_data_delay_seconds: 15,        // real-time is the Pro figure
-      pricing_url: 'https://dexpaprika.com/pricing',
+      limits_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
+      pricing_url: 'https://dexpaprika.com/api/pricing',
     },
     network_synonyms: NETWORK_SYNONYMS,
     workflows: {
@@ -688,6 +695,12 @@ const server = new McpServer(
     instructions: SERVER_INSTRUCTIONS,
   },
 );
+
+// Number of tools this build registers. Derived after registration rather than
+// typed by hand: it was hard-coded to 16 and went stale the moment a tool was
+// added, and getCapabilities is machine-read, so a wrong count misleads agents
+// rather than just readers.
+let TOOL_COUNT = 0;
 
 // ─── getKeyStatus ────────────────────────────────────────────────────────────
 // Answers "is my key actually being used?", which on this API you cannot tell
@@ -737,6 +750,7 @@ server.registerTool(
     }
   },
 );
+TOOL_COUNT += 1;
 
 // Helper: register a read tool with rationale + outputSchema + read-only annotations.
 function registerReadTool(name, description, inputShape, handler) {
@@ -750,6 +764,7 @@ function registerReadTool(name, description, inputShape, handler) {
     },
     handler,
   );
+  TOOL_COUNT += 1;
 }
 
 // ─── getNetworks ─────────────────────────────────────────────────────────────
