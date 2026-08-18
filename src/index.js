@@ -743,7 +743,7 @@ server.registerTool(
         plan_reported_by_api: null,
         key_reaching_api: false,
         diagnosis: configured
-          ? 'The key reached the API and was rejected. The most common cause by far is a scheme word: the key must be the entire Authorization value, with no "Bearer" in front. Otherwise check for a truncated paste.'
+          ? 'The key reached the API and was rejected. The most common cause is a scheme word: the key must be the entire Authorization value, so "ApiKey" or "Token" in front of it fails. ("Bearer" is stripped by api.dexpaprika.com and would not cause this.) Otherwise check for a truncated paste.'
           : 'Could not read usage. The server is running keyless, which is the default and needs no key.',
         error: error && typeof error === 'object' && 'error' in error ? error.error : String(error),
       });
