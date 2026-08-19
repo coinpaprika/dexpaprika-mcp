@@ -544,6 +544,7 @@ const OUTPUT_SCHEMAS = {
       free_key_requests_per_minute: z.number(),
       free_tier_max_data_delay_seconds: z.number(),
       limits_url: z.string().describe('Live source for the quota and rate figures above, which change.'),
+      console_url: z.string().describe('Where to register a free API key, which doubles the per-minute limit.'),
       pricing_url: z.string(),
     }).passthrough(),
     network_synonyms: z.record(z.string(), z.array(z.string())).describe('Canonical network id -> common alternates an agent might try.'),
@@ -655,6 +656,7 @@ function buildCapabilitiesDocument() {
       free_key_requests_per_minute: 30,            // with a free API key
       free_tier_max_data_delay_seconds: 15,        // real-time is the Pro figure
       limits_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
+      console_url: 'https://console.dexpaprika.com',
       pricing_url: 'https://dexpaprika.com/api/pricing',
     },
     network_synonyms: NETWORK_SYNONYMS,
