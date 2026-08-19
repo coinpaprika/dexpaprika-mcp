@@ -255,7 +255,7 @@ const prices = await getTokenMultiPrices({
 
 ## Rate Limits & Performance
 
-- **Free tier**: keyless, no signup, at 30 requests per minute. A free API key raises the monthly quota and unlocks streaming. Pro is $99/month at 300 requests per minute. One request costs one credit; batch endpoints cost one credit per item. Monthly quotas change, so read them here rather than from this page: https://dexpaprika.com/api/pricing
+- **Free tier**: keyless, no signup, at 15 requests per minute. A free API key raises that to 30 requests per minute, raises the monthly quota, and unlocks streaming. Pro is $99/month at 300 requests per minute. One request costs one credit; batch endpoints cost one credit per item. Monthly quotas change, so read them here rather than from this page: https://dexpaprika.com/api/pricing
 - **Data delay**: up to 15 seconds on the free tier, real-time on Pro
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Error Handling**: Structured errors with codes, suggestions, and retry guidance
