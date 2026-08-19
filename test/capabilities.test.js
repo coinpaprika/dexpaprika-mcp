@@ -68,8 +68,21 @@ test('the advertised limits carry a live source, because they change', async () 
   assert.notEqual(stats.free_tier_credits_per_month, 200_000);
   assert.notEqual(stats.free_key_credits_per_month, 500_000);
 
-  // Registering raises the monthly allowance and nothing else. If this ever
-  // stops being true the 429 copy has to change with it, so pin it.
+  // Registering raises the monthly allowance AND the per-minute rate. The old
+  // version of this test pinned free_tier_requests_per_minute to 30 with a
+  // comment saying registering "raises the monthly allowance and nothing else",
+  // and predicted that if that ever stopped being true the 429 copy would have
+  // to change with it. It was never true: keyless has always been 15. So the
+  // test was pinning the bug, and the 429 copy did have to change.
   assert.ok(stats.free_key_credits_per_month > stats.free_tier_credits_per_month);
-  assert.equal(stats.free_tier_requests_per_minute, 30);
+  assert.equal(stats.free_tier_requests_per_minute, 15);
+  assert.equal(stats.free_key_requests_per_minute, 30);
+  assert.ok(
+    stats.free_key_requests_per_minute > stats.free_tier_requests_per_minute,
+    'a free key must buy real per-minute headroom, otherwise the 429 hint is false',
+  );
+
+  // Telling an agent a key doubles its limit is only useful with somewhere to
+  // get one.
+  assert.equal(stats.console_url, 'https://console.dexpaprika.com');
 });
