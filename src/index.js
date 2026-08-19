@@ -244,9 +244,12 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
         // Null rather than invented: a made-up number is what produced the
         // wait-until-midnight advice this replaces.
         retry_after_seconds: retryAfterSeconds,
-        // Deliberately no "register for more" hint here. A free API key raises
-        // the monthly allowance and opens streaming, but it does NOT raise the
-        // per-minute limit, so suggesting it at this moment would be false.
+        // This hint used to be withheld, on the reasoning that a free key raises
+        // the monthly allowance and opens streaming but does NOT raise the
+        // per-minute limit. That reasoning was built on the wrong number. A free
+        // key doubles the per-minute limit, 15 to 30, so on a per-minute 429 it
+        // is the most useful thing we can say.
+        raise_the_limit: 'A free API key doubles the per-minute limit from 15 to 30. Register at https://console.dexpaprika.com',
         reduce_request_count: 'Batch up to 10 tokens per call with getTokenMultiPrices, or stream instead of polling.',
       },
     );
@@ -538,6 +541,7 @@ const OUTPUT_SCHEMAS = {
       free_tier_credits_per_month: z.number(),
       free_key_credits_per_month: z.number(),
       free_tier_requests_per_minute: z.number(),
+      free_key_requests_per_minute: z.number(),
       free_tier_max_data_delay_seconds: z.number(),
       limits_url: z.string().describe('Live source for the quota and rate figures above, which change.'),
       pricing_url: z.string(),
@@ -647,7 +651,8 @@ function buildCapabilitiesDocument() {
       // hard-coded here.
       free_tier_credits_per_month: 50_000,         // keyless, per IP
       free_key_credits_per_month: 300_000,         // with a free API key
-      free_tier_requests_per_minute: 30,           // same on both free tiers
+      free_tier_requests_per_minute: 15,           // keyless, per IP
+      free_key_requests_per_minute: 30,            // with a free API key
       free_tier_max_data_delay_seconds: 15,        // real-time is the Pro figure
       limits_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
       pricing_url: 'https://dexpaprika.com/api/pricing',
