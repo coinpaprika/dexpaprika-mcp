@@ -76,7 +76,10 @@ test('the advertised limits carry a live source, because they change', async () 
   // test was pinning the bug, and the 429 copy did have to change.
   assert.ok(stats.free_key_credits_per_month > stats.free_tier_credits_per_month);
   assert.equal(stats.free_tier_requests_per_minute, 15);
-  assert.equal(stats.free_key_requests_per_minute, 30);
+  // 50 on the pricing page since 2026-08-22 (it said 30 before that).
+  assert.equal(stats.free_key_requests_per_minute, 50);
+  // "Up to 60s" on Keyless and Free since 2026-08-28; real-time is Pro.
+  assert.equal(stats.free_tier_max_data_delay_seconds, 60);
   assert.ok(
     stats.free_key_requests_per_minute > stats.free_tier_requests_per_minute,
     'a free key must buy real per-minute headroom, otherwise the 429 hint is false',
