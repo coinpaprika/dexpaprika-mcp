@@ -99,7 +99,7 @@ const NETWORK_SYNONYMS = {
   ton: ['ton'],
   plasma: ['plasma'],
   bob_network: ['bob_network', 'bob', 'bob-network'],
-  botanix: ['botanix'],
+  robinhood: ['robinhood'],
   fantom: ['fantom', 'ftm'],
   celo: ['celo'],
   monad: ['monad'],
@@ -640,7 +640,7 @@ function buildCapabilitiesDocument() {
     server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
     tools_count: TOOL_COUNT,
     stats: {
-      networks: 36,
+      networks: 35,
       tokens_approx: 33_000_000,
       pools_approx: 36_000_000,
       free_tier: true,             // a free tier exists; it is metered, not unlimited
@@ -653,8 +653,8 @@ function buildCapabilitiesDocument() {
       free_tier_credits_per_month: 50_000,         // keyless, per IP
       free_key_credits_per_month: 300_000,         // with a free API key
       free_tier_requests_per_minute: 15,           // keyless, per IP
-      free_key_requests_per_minute: 30,            // with a free API key
-      free_tier_max_data_delay_seconds: 15,        // real-time is the Pro figure
+      free_key_requests_per_minute: 50,            // with a free API key (pricing page since 2026-08-22)
+      free_tier_max_data_delay_seconds: 60,        // "up to 60s" on Free (pricing page since 2026-08-28); real-time is Pro
       limits_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
       console_url: 'https://console.dexpaprika.com',
       pricing_url: 'https://dexpaprika.com/api/pricing',

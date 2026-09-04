@@ -153,7 +153,7 @@ This self-host build registers 17 read tools: 16 market-data tools plus `getKeyS
 | Tool | Description |
 |------|-------------|
 | `getCapabilities` | Server capabilities, workflow patterns, network synonyms, and best practices. **Start here.** |
-| `getNetworks` | List every supported blockchain network (36) |
+| `getNetworks` | List every supported blockchain network (35) |
 | `getStats` | High-level ecosystem stats (total networks, DEXes, pools, tokens) |
 | `search` | Search tokens, pools, and DEXes across ALL networks by name, symbol, or address |
 | `getKeyStatus` | Whether a key is being sent and which plan the API sees. Reads no market data. |
@@ -255,8 +255,8 @@ const prices = await getTokenMultiPrices({
 
 ## Rate Limits & Performance
 
-- **Free tier**: keyless, no signup, at 15 requests per minute. A free API key raises that to 30 requests per minute, raises the monthly quota, and unlocks streaming: register at https://console.dexpaprika.com. Pro is $99/month at 300 requests per minute. One request costs one credit; batch endpoints cost one credit per item. Full docs at https://docs.dexpaprika.com. Monthly quotas change, so read them here rather than from this page: https://dexpaprika.com/api/pricing
-- **Data delay**: up to 15 seconds on the free tier, real-time on Pro
+- **Free tier**: keyless, no signup, at 15 requests per minute. A free API key raises that to 50 requests per minute, raises the monthly quota, and unlocks streaming: register at https://console.dexpaprika.com. Pro is $99/month at 300 requests per minute. One request costs one credit; batch endpoints cost one credit per item. Full docs at https://docs.dexpaprika.com. Monthly quotas change, so read them here rather than from this page: https://dexpaprika.com/api/pricing
+- **Data delay**: up to 60 seconds on the free tier, real-time on Pro
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Error Handling**: Structured errors with codes, suggestions, and retry guidance
 - **OHLCV Data Availability**: Historical data typically available from token/pool creation date
