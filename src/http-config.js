@@ -67,12 +67,10 @@ export function buildUserAgent({ version, client, runtime } = {}) {
 /**
  * Headers for an outbound API call.
  *
- * **The key is the entire `Authorization` value.** There is no `Bearer` prefix
- * and no other scheme word. `Authorization: Bearer api_...` returns 401, because
- * the API checksums the raw header value and nothing strips a scheme word off
- * the front. This is the single most common reason a working key looks broken,
- * it has resurfaced three times in four months, and the test file pins the
- * format precisely so nobody reintroduces it.
+ * **The key is the entire `Authorization` value.** Nothing goes in front of it
+ * and no scheme word is ever prepended. That is the whole instruction, and it is
+ * the single documented form we publish. It has been re-derived wrongly three
+ * times in four months, so the test file pins the format precisely.
  *
  * @returns {Record<string, string>}
  */
