@@ -76,13 +76,19 @@ test('the advertised limits carry a live source, because they change', async () 
   // test was pinning the bug, and the 429 copy did have to change.
   assert.ok(stats.free_key_credits_per_month > stats.free_tier_credits_per_month);
   assert.equal(stats.free_tier_requests_per_minute, 15);
-  assert.equal(stats.free_key_requests_per_minute, 30);
+  assert.equal(stats.free_key_requests_per_minute, 50);
   assert.ok(
     stats.free_key_requests_per_minute > stats.free_tier_requests_per_minute,
     'a free key must buy real per-minute headroom, otherwise the 429 hint is false',
   );
 
-  // Telling an agent a key doubles its limit is only useful with somewhere to
+  // Two more that drifted silently because nothing pinned them. networks sat at
+  // 36 after Botanix was retired on 2026-08-26, and the free data delay sat at
+  // 15 seconds after the pricing page moved to 60 on 2026-08-28.
+  assert.equal(stats.networks, 35);
+  assert.equal(stats.free_tier_max_data_delay_seconds, 60);
+
+  // Telling an agent a key raises its limit is only useful with somewhere to
   // get one.
   assert.equal(stats.console_url, 'https://console.dexpaprika.com');
 });

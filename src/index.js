@@ -247,9 +247,9 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
         // This hint used to be withheld, on the reasoning that a free key raises
         // the monthly allowance and opens streaming but does NOT raise the
         // per-minute limit. That reasoning was built on the wrong number. A free
-        // key doubles the per-minute limit, 15 to 30, so on a per-minute 429 it
-        // is the most useful thing we can say.
-        raise_the_limit: 'A free API key doubles the per-minute limit from 15 to 30. Register at https://console.dexpaprika.com',
+        // key more than triples the per-minute limit, 15 to 50, so on a
+        // per-minute 429 it is the most useful thing we can say.
+        raise_the_limit: 'A free API key raises the per-minute limit from 15 to 50. Register at https://console.dexpaprika.com',
         reduce_request_count: 'Batch up to 10 tokens per call with getTokenMultiPrices, or stream instead of polling.',
       },
     );
@@ -640,21 +640,22 @@ function buildCapabilitiesDocument() {
     server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
     tools_count: TOOL_COUNT,
     stats: {
-      networks: 36,
+      networks: 35,
       tokens_approx: 33_000_000,
       pools_approx: 36_000_000,
       free_tier: true,             // a free tier exists; it is metered, not unlimited
       key_required_to_start: false,
-      // These four move. They last changed on 2026-08-11 (keyless 400K -> 50K,
-      // free key 500K -> 300K) and this document is frozen into each published
-      // tarball, so an agent that treats them as current will eventually be
-      // wrong. limits_url is the live source and takes precedence over anything
-      // hard-coded here.
+      // These five move. Changed 2026-08-11 (keyless 400K -> 50K, free key
+      // 500K -> 300K) and again 2026-08-22 and 2026-08-28 (free key 30 -> 50
+      // requests a minute, free data delay 15s -> 60s). This document is frozen
+      // into each published tarball, so an agent that treats them as current
+      // will eventually be wrong. limits_url is the live source and takes
+      // precedence over anything hard-coded here.
       free_tier_credits_per_month: 50_000,         // keyless, per IP
       free_key_credits_per_month: 300_000,         // with a free API key
       free_tier_requests_per_minute: 15,           // keyless, per IP
-      free_key_requests_per_minute: 30,            // with a free API key
-      free_tier_max_data_delay_seconds: 15,        // real-time is the Pro figure
+      free_key_requests_per_minute: 50,            // with a free API key
+      free_tier_max_data_delay_seconds: 60,        // real-time is the Pro figure
       limits_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
       console_url: 'https://console.dexpaprika.com',
       pricing_url: 'https://dexpaprika.com/api/pricing',
