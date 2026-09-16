@@ -2,6 +2,15 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.5.1] - 2026-09-16
+
+### Fixed
+- **`getCapabilities` was publishing the pre-v2.0 quotas.** It reported 50,000 keyless and 300,000 free-key credits a month. Pricing v2.0 (2026-09-15) made those 30,000 and 100,000, and moved both to a rolling 30-day window instead of a calendar month, so an agent that sizes a run against the old figures takes a 402 a third of the way in. Second time this document has gone stale; `limits_url` is the live source and takes precedence over anything frozen into a tarball.
+- **The advertised free-tier data delay was 15 seconds.** The cap has been up to 60 since 2026-08-28.
+- **`networks: 36`.** Botanix came out in August. Live `/stats` and `/networks` both answer 35.
+- **The 402 message told a keyed caller to wait for the next period.** A free key counts a rolling window that refills continuously and has no reset moment; only Dev and Pro reset with a billing period. Waiting for a date that never arrives is worse advice than no advice.
+- **README.** Pro is 500 requests a minute, not 300, there is now a $30 Dev plan at 120, and the free delay is up to 60 seconds.
+
 ## [2.5.0] - 2026-08-14
 
 ### Added
