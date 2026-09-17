@@ -264,7 +264,7 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
       'Monthly credit allowance exhausted',
       false,
       keyed
-        ? 'This key has spent its monthly credits. The allowance resets at the start of the next period, and the response body carries the current upgrade options.'
+        ? 'This key has spent its credits. A free key counts a rolling 30-day window, so the allowance refills continuously as old usage ages out and there is no reset date; Dev and Pro reset with the billing period. The response body carries the current upgrade options.'
         : 'Running keyless. A free API key raises the monthly allowance well above the keyless tier and takes no card: set DEXPAPRIKA_API_KEY and restart. Current limits: https://docs.dexpaprika.com/knowledge-base/rate-limits',
       undefined,
       {
@@ -640,21 +640,22 @@ function buildCapabilitiesDocument() {
     server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
     tools_count: TOOL_COUNT,
     stats: {
-      networks: 36,
+      networks: 35,
       tokens_approx: 33_000_000,
       pools_approx: 36_000_000,
       free_tier: true,             // a free tier exists; it is metered, not unlimited
       key_required_to_start: false,
-      // These four move. They last changed on 2026-08-11 (keyless 400K -> 50K,
-      // free key 500K -> 300K) and this document is frozen into each published
-      // tarball, so an agent that treats them as current will eventually be
-      // wrong. limits_url is the live source and takes precedence over anything
-      // hard-coded here.
-      free_tier_credits_per_month: 50_000,         // keyless, per IP
-      free_key_credits_per_month: 300_000,         // with a free API key
+      // These four move. They changed on 2026-08-11 (keyless 400K -> 50K, free
+      // key 500K -> 300K) and again with Pricing v2.0 on 2026-09-15 (30K and
+      // 100K, counted over a rolling 30 days rather than a calendar month).
+      // This document is frozen into each published tarball, so an agent that
+      // treats them as current will eventually be wrong. limits_url is the
+      // live source and takes precedence over anything hard-coded here.
+      free_tier_credits_per_month: 30_000,         // keyless, per IP, rolling 30 days
+      free_key_credits_per_month: 100_000,         // free API key, rolling 30 days
       free_tier_requests_per_minute: 15,           // keyless, per IP
       free_key_requests_per_minute: 30,            // with a free API key
-      free_tier_max_data_delay_seconds: 15,        // real-time is the Pro figure
+      free_tier_max_data_delay_seconds: 60,        // real-time is the paid figure
       limits_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
       console_url: 'https://console.dexpaprika.com',
       pricing_url: 'https://dexpaprika.com/api/pricing',
