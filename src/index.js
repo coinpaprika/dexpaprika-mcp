@@ -994,13 +994,13 @@ registerReadTool(
 // ─── getPoolOHLCV ────────────────────────────────────────────────────────────
 registerReadTool(
   'getPoolOHLCV',
-  'Get historical OHLCV candles (open, high, low, close, volume) for one pool over a time range, returned as a time-series array. Read-only and keyless. Use for \'price history of this pair\', \'hourly chart for the last week\', \'candles since Jan 1\', or backtesting; for the single current price use getPoolDetails instead. Params: network (required); pool_address (required); start (required; Unix timestamp, RFC3339, or yyyy-mm-dd); end (optional, capped to 1 year after start); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 100, max 366 candles); inversed (optional bool, default false).',
+  'Get historical OHLCV candles (open, high, low, close, volume) for one pool over a time range, returned as a time-series array. Read-only and keyless. Use for \'price history of this pair\', \'hourly chart for the last week\', \'candles since Jan 1\', or backtesting; for the single current price use getPoolDetails instead. Params: network (required); pool_address (required); start (required; Unix timestamp, RFC3339, or yyyy-mm-dd); end (optional, capped to 1 year after start); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 100, max 1000 candles); inversed (optional bool, default false).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
     start: z.string().describe('REQUIRED: Start time for historical data (Unix timestamp, RFC3339 timestamp, or yyyy-mm-dd format)'),
     end: z.string().optional().describe('OPTIONAL: End time for historical data (max 1 year from start)'),
-    limit: z.coerce.number().optional().default(100).describe('OPTIONAL: Number of data points to retrieve (default: 100, max: 366)'),
+    limit: z.coerce.number().optional().default(100).describe('OPTIONAL: Number of data points to retrieve (default: 100, max: 1000)'),
     interval: z.enum(['1m', '5m', '10m', '15m', '30m', '1h', '6h', '12h', '24h']).optional().default('24h').describe("OPTIONAL: Interval granularity (default: '24h')"),
     inversed: z.boolean().optional().default(false).describe('OPTIONAL: Whether to invert the price ratio for alternative pair perspective (default: false)'),
   },

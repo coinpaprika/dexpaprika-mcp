@@ -2,6 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.5.2] - 2026-09-21
+
+### Fixed
+- **`getPoolOHLCV` advertised `limit` max 366.** The API accepts up to 1000 candles per call and has for some time; the public OpenAPI spec caught up on 2026-09-21 (dexpaprika-go#2393). The tool never clamped the value, so a caller who asked for 1000 already got 1000; only the description said otherwise, which is enough to make an agent paginate three times where once would do.
+
 ## [2.5.1] - 2026-09-16
 
 ### Fixed
