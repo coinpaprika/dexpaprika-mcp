@@ -4,20 +4,34 @@ x-mcp:
 security: []
 info:
   title: DexPaprika API
-  version: 1.0.2
+  version: 1.0.4
   description: >
     # Introduction
       Welcome to the DexPaprika API! This product is developed by [CoinPaprika](https://coinpaprika.com).
 
       Our API enables developers to query token, pool, and DEX data across multiple blockchain networks. Feel free to explore our endpoints below.
+
       ---
-    # Getting Started
+    # Rate limits and credit quota
+      Two different limits apply, signalled by distinct status codes:
 
-    ## Testing the API - Code Snippets
+      - **429 Too Many Requests**, you are sending requests too fast (per-minute limit). Slow down and retry after the number of seconds given in the `Retry-After` header.
 
-    The snippets below show how to quickly make a **GET** request. Since this is
-    a **public API** (no API key needed), you can simply call the endpoints
-    directly.
+      - **402 Payment Required**, your credit allowance is exhausted. Retrying will not help. Register a free key (keyless), upgrade your plan (free key), or enable overage in the console (Dev and Pro).
+
+      Both codes carry a structured JSON body (`error`, `tier`, `message`, `credits`, and per-scenario fields; see the 402/429 response schemas below). A Dev or Pro 402 includes `resets_at`, the UTC end of the billing period; keyless and free keys count over a rolling 30-day window and carry no `resets_at`. A 402 deliberately carries no `Retry-After` header.
+
+      Responses include an `X-Api-Plan` header naming the plan the request was evaluated against, `x-credits-limit`, `x-credits-remaining` and `x-credits-reset` for the credit allowance, and the `ratelimit-limit`, `ratelimit-remaining` and `ratelimit-reset` trio.
+
+      Call `GET /usage` to check your plan and, when authenticated with an API key on `api-pro.dexpaprika.com`, your current-period credit usage and remaining allowance.
+
+      ---
+    # Getting started
+
+    ## Testing the API with code snippets
+
+    The snippets below show how to quickly make a **GET** request. No API key is
+    needed to start, so you can call the endpoints directly.
 
 
     > **Note**: If you see CORS issues in a browser, you may need to call these
@@ -29,7 +43,7 @@ info:
 
     ```bash
 
-    curl -X GET "https://api.dexpaprika.com/networks/ethereum/pools" | jq
+    curl -X GET "https://api.dexpaprika.com/networks/ethereum/pools/search?limit=10" | jq
 
     ```
 
@@ -42,7 +56,7 @@ info:
 
     const options = {
       hostname: 'api.dexpaprika.com',
-      path: '/networks/ethereum/pools',
+      path: '/networks/ethereum/pools/search?limit=10',
       method: 'GET',
     };
 
@@ -68,7 +82,7 @@ info:
     import requests
 
 
-    url = "https://api.dexpaprika.com/networks/ethereum/pools"
+    url = "https://api.dexpaprika.com/networks/ethereum/pools/search?limit=10"
 
 
     response = requests.get(url)
@@ -89,7 +103,7 @@ info:
 
 
     curl_setopt_array($curl, array(
-      CURLOPT_URL => "https://api.dexpaprika.com/networks/ethereum/pools",
+      CURLOPT_URL => "https://api.dexpaprika.com/networks/ethereum/pools/search?limit=10",
       CURLOPT_RETURNTRANSFER => true
     ));
 
@@ -125,7 +139,7 @@ info:
     public class DexPaprikaExample {
         public static void main(String[] args) {
             try {
-                URL url = new URL("https://api.dexpaprika.com/networks/ethereum/pools");
+                URL url = new URL("https://api.dexpaprika.com/networks/ethereum/pools/search?limit=10");
                 HttpURLConnection con = (HttpURLConnection) url.openConnection();
                 con.setRequestMethod("GET");
                 int responseCode = con.getResponseCode();
@@ -167,7 +181,7 @@ info:
 
     func main() {
         client := &http.Client{}
-        req, err := http.NewRequest("GET", "https://api.dexpaprika.com/networks/ethereum/pools", nil)
+        req, err := http.NewRequest("GET", "https://api.dexpaprika.com/networks/ethereum/pools/search?limit=10", nil)
         if err != nil {
             log.Fatal(err)
         }
@@ -210,7 +224,7 @@ info:
         static async Task Main()
         {
             using var client = new HttpClient();
-            var url = "https://api.dexpaprika.com/networks/ethereum/pools";
+            var url = "https://api.dexpaprika.com/networks/ethereum/pools/search?limit=10";
             
             var response = await client.GetAsync(url);
             
@@ -229,7 +243,7 @@ info:
     ```
 
 
-    ## Feedback & Next Steps
+    ## Feedback and next steps
 
     1. **Test** any of the snippets above.  
 
@@ -266,6 +280,592 @@ servers:
   - url: "https://api.dexpaprika.com"
     description: Production server
 paths:
+  /networks/{network}/pools/search:
+    get:
+      operationId: searchNetworkPools
+      tags:
+        - Pools
+      summary: Advanced pool filtering on a specific network.
+      description: |
+        Retrieves a paginated list of pools matching the advanced search criteria.
+        Supports various filters and cursor-based pagination.
+      parameters:
+        - $ref: "#/components/parameters/networkParam"
+        - $ref: "#/components/parameters/limitParam"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Cursor for pagination.
+        - name: volume_usd_24h_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_24h_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_max
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_min
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_max
+          in: query
+          schema:
+            type: number
+        - name: txns_24h_min
+          in: query
+          schema:
+            type: integer
+        - name: txns_24h_max
+          in: query
+          schema:
+            type: integer
+        - name: created_after
+          in: query
+          schema:
+            type: integer
+        - name: created_before
+          in: query
+          schema:
+            type: integer
+        - name: price_usd_min
+          in: query
+          schema:
+            type: number
+        - name: price_usd_max
+          in: query
+          schema:
+            type: number
+        - name: price_change_percentage_6h_min
+          in: query
+          description: Filter pools with a 6h price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_6h_max
+          in: query
+          description: Filter pools with a 6h price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_1h_min
+          in: query
+          description: Filter pools with a 1h price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_1h_max
+          in: query
+          description: Filter pools with a 1h price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_5m_min
+          in: query
+          description: Filter pools with a 5m price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_5m_max
+          in: query
+          description: Filter pools with a 5m price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_24h_min
+          in: query
+          description: Filter pools with a 24h price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_24h_max
+          in: query
+          description: Filter pools with a 24h price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: dex_name
+          in: query
+          schema:
+            type: string
+        - name: token_address
+          in: query
+          description: |
+            Restrict results to pools that contain this token address on the given network.
+          schema:
+            type: string
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum:
+              [
+                volume_usd_24h,
+                volume_usd_7d,
+                volume_usd_30d,
+                liquidity_usd,
+                txns_24h,
+                created_at,
+                price_usd,
+                price_change_percentage_24h,
+                price_change_percentage_6h,
+                price_change_percentage_1h,
+                price_change_percentage_5m,
+              ]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: detailed
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: If true, the response will include enriched data.
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolSearchResponse"
+        "404":
+          description: Network not found.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /pools/search:
+    get:
+      operationId: searchPools
+      tags:
+        - Pools
+      summary: Advanced pool filtering across multiple networks.
+      description: |
+        Retrieves a paginated list of pools matching the advanced search criteria across multiple chains.
+        Supports various filters and cursor-based pagination.
+      parameters:
+        - name: chains
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of chains to search in (e.g., 'ethereum,polygon'). If empty, all chains are searched.
+        - $ref: "#/components/parameters/limitParam"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Cursor for pagination.
+        - name: volume_usd_24h_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_24h_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_max
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_min
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_max
+          in: query
+          schema:
+            type: number
+        - name: txns_24h_min
+          in: query
+          schema:
+            type: integer
+        - name: txns_24h_max
+          in: query
+          schema:
+            type: integer
+        - name: created_after
+          in: query
+          schema:
+            type: integer
+        - name: created_before
+          in: query
+          schema:
+            type: integer
+        - name: price_usd_min
+          in: query
+          schema:
+            type: number
+        - name: price_usd_max
+          in: query
+          schema:
+            type: number
+        - name: price_change_percentage_6h_min
+          in: query
+          description: Filter pools with a 6h price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_6h_max
+          in: query
+          description: Filter pools with a 6h price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_1h_min
+          in: query
+          description: Filter pools with a 1h price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_1h_max
+          in: query
+          description: Filter pools with a 1h price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_5m_min
+          in: query
+          description: Filter pools with a 5m price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_5m_max
+          in: query
+          description: Filter pools with a 5m price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_24h_min
+          in: query
+          description: Filter pools with a 24h price change percentage greater than or equal to this value.
+          schema:
+            type: number
+        - name: price_change_percentage_24h_max
+          in: query
+          description: Filter pools with a 24h price change percentage less than or equal to this value.
+          schema:
+            type: number
+        - name: dex_name
+          in: query
+          schema:
+            type: string
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            enum:
+              [
+                volume_usd_24h,
+                volume_usd_7d,
+                volume_usd_30d,
+                liquidity_usd,
+                txns_24h,
+                created_at,
+                price_usd,
+                price_change_percentage_24h,
+                price_change_percentage_6h,
+                price_change_percentage_1h,
+                price_change_percentage_5m,
+              ]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: detailed
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: If true, the response will include enriched data.
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NetworksPoolSearchResponse"
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /networks/{network}/tokens/search:
+    get:
+      operationId: searchNetworkTokens
+      tags:
+        - Tokens
+      summary: Advanced token filtering on a specific network.
+      description: |
+        Retrieves a paginated list of tokens on a specific network matching the advanced search criteria.
+        Supports various filters and cursor-based pagination.
+      parameters:
+        - $ref: "#/components/parameters/networkParam"
+        - $ref: "#/components/parameters/limitParam"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Cursor for pagination.
+        - name: volume_usd_24h_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_24h_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_max
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_min
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_max
+          in: query
+          schema:
+            type: number
+        - name: txns_24h_min
+          in: query
+          schema:
+            type: integer
+        - name: txns_24h_max
+          in: query
+          schema:
+            type: integer
+        - name: price_usd_min
+          in: query
+          schema:
+            type: number
+        - name: price_usd_max
+          in: query
+          schema:
+            type: number
+        - name: price_change_percentage_24h_min
+          in: query
+          schema:
+            type: number
+        - name: price_change_percentage_24h_max
+          in: query
+          schema:
+            type: number
+        - name: fdv_usd_min
+          in: query
+          schema:
+            type: number
+        - name: fdv_usd_max
+          in: query
+          schema:
+            type: number
+        - name: created_after
+          in: query
+          schema:
+            type: integer
+        - name: created_before
+          in: query
+          schema:
+            type: integer
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            default: volume_usd_24h
+            enum:
+              [
+                volume_usd_24h,
+                volume_usd_7d,
+                volume_usd_30d,
+                liquidity_usd,
+                txns_24h,
+                price_change_percentage_24h,
+                created_at,
+                fdv_usd,
+              ]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: desc
+            enum: [asc, desc]
+        - name: detailed
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: If true, the response will include enriched data (metadata, pools, intervals).
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenSearchResponse"
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /tokens/search:
+    get:
+      operationId: searchTokens
+      tags:
+        - Tokens
+      summary: Advanced token filtering across multiple networks.
+      description: |
+        Retrieves a paginated list of tokens matching the advanced search criteria across multiple chains.
+        Supports various filters and cursor-based pagination.
+      parameters:
+        - name: chains
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of chains to search in (e.g., 'ethereum,solana'). If empty, all chains are searched.
+        - $ref: "#/components/parameters/limitParam"
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Cursor for pagination.
+        - name: volume_usd_24h_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_24h_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_7d_max
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_min
+          in: query
+          schema:
+            type: number
+        - name: volume_usd_30d_max
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_min
+          in: query
+          schema:
+            type: number
+        - name: liquidity_usd_max
+          in: query
+          schema:
+            type: number
+        - name: txns_24h_min
+          in: query
+          schema:
+            type: integer
+        - name: txns_24h_max
+          in: query
+          schema:
+            type: integer
+        - name: price_usd_min
+          in: query
+          schema:
+            type: number
+        - name: price_usd_max
+          in: query
+          schema:
+            type: number
+        - name: price_change_percentage_24h_min
+          in: query
+          schema:
+            type: number
+        - name: price_change_percentage_24h_max
+          in: query
+          schema:
+            type: number
+        - name: fdv_usd_min
+          in: query
+          schema:
+            type: number
+        - name: fdv_usd_max
+          in: query
+          schema:
+            type: number
+        - name: created_after
+          in: query
+          schema:
+            type: integer
+        - name: created_before
+          in: query
+          schema:
+            type: integer
+        - name: order_by
+          in: query
+          schema:
+            type: string
+            default: volume_usd_24h
+            enum:
+              [
+                volume_usd_24h,
+                volume_usd_7d,
+                volume_usd_30d,
+                liquidity_usd,
+                txns_24h,
+                price_change_percentage_24h,
+                created_at,
+                fdv_usd,
+              ]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: desc
+            enum: [asc, desc]
+        - name: detailed
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: If true, the response will include enriched data (metadata, pools, intervals).
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenSearchResponse"
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /networks:
     get:
       operationId: getNetworks
@@ -285,7 +885,7 @@ paths:
                 type: array
                 description: List of blockchain networks.
                 items:
-                  $ref: "#/components/schemas/Network"
+                  $ref: "#/components/schemas/NetworkMetrics"
               example:
                 - id: "ethereum"
                   display_name: "Ethereum"
@@ -313,6 +913,10 @@ paths:
                   error:
                     type: string
                     example: Unexpected server error. Please try again later.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   "/networks/{network}/dexes":
     get:
       operationId: getNetworkDexes
@@ -358,222 +962,10 @@ paths:
                   error:
                     type: string
                     example: Network not found.
-  /pools:
-    get:
-      operationId: getTopPools
-      tags:
-        - Pools
-      summary: Get top X pools. (DEPRECATED)
-      description: |
-        **THIS ENDPOINT HAS BEEN DEPRECATED AND WILL BE REMOVED.**
-        It now returns a 410 Gone status. Please refer to our API documentation for alternatives.
-
-        ---
-        *Original Description (for historical reference):*
-        Retrieves a paginated list of top pools from all (or specific) networks.
-        Allows sorting and ordering, providing aggregated volume, price data,
-        and token details for each pool.
-      deprecated: true
-      parameters:
-        - $ref: "#/components/parameters/pageParam"
-        - $ref: "#/components/parameters/limitParam"
-        - $ref: "#/components/parameters/sortParam"
-        - $ref: "#/components/parameters/orderParam"
-      responses:
-        "410":
-          description: Endpoint Removed. This endpoint has been permanently removed.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Endpoint Removed
-                  message:
-                    type: string
-                    example: This endpoint has been permanently removed. Please refer to our API documentation for alternatives.
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pools:
-                    type: array
-                    description: An array of pool objects with their associated price data.
-                    items:
-                      $ref: "#/components/schemas/PoolWithPrices"
-                  page_info:
-                    type: object
-                    description: Details about the current page of results.
-                    properties:
-                      limit:
-                        type: integer
-                        description: The maximum number of items returned per page.
-                      page:
-                        type: integer
-                        description: The current page number.
-                      total_items:
-                        type: integer
-                        description: The total number of items matching the query.
-                      total_pages:
-                        type: integer
-                        description: The total number of pages available.
-              example:
-                pools:
-                  - id: 8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj
-                    dex_id: CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK
-                    dex_name: Raydium CLMM
-                    chain: solana
-                    volume_usd: 829807420.5052161
-                    created_at: "2023-11-26T20:25:08.000Z"
-                    created_at_block_number: 232424998
-                    transactions: 273978
-                    price_usd: 228.70162563938777
-                    last_price_change_usd_5m: 0.05658913344914529
-                    last_price_change_usd_1h: -2.2971851257064313
-                    last_price_change_usd_24h: -10.883264918629346
-                    fee: 0
-                    tokens:
-                      - id: So11111111111111111111111111111111111111112
-                        name: Wrapped SOL
-                        symbol: SOL
-                        chain: solana
-                        decimals: 9
-                        added_at: "2024-10-04T08:30:05.000Z"
-                      - id: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
-                        name: USD Coin
-                        symbol: USDC
-                        chain: solana
-                        decimals: 6
-                        added_at: "2024-10-04T08:30:05.000Z"
-                page_info:
-                  limit: 100
-                  page: 1
-                  total_items: 121650
-                  total_pages: 1217
-        "400":
-          description: The specified network is invalid.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Invalid network.
-        "404":
-          description: Network not found.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Network not found.
-  "/networks/{network}/pools":
-    get:
-      operationId: getNetworkPools
-      tags:
-        - Pools
-      summary: Get top X pools on a network.
-      description: |
-        Retrieves a paginated list of top pools on a specific network. 
-        Supports sorting and ordering by different parameters. The response 
-        includes volume, price data, and token details for each pool.
-      parameters:
-        - $ref: "#/components/parameters/pageParam"
-        - $ref: "#/components/parameters/limitParam"
-        - $ref: "#/components/parameters/networkParam"
-        - $ref: "#/components/parameters/sortParam"
-        - $ref: "#/components/parameters/orderParam"
-      responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pools:
-                    type: array
-                    description: >-
-                      A list of pools for the given network, including pricing
-                      data.
-                    items:
-                      $ref: "#/components/schemas/PoolWithPrices"
-                  page_info:
-                    type: object
-                    description: Details about the current page of results.
-                    properties:
-                      limit:
-                        type: integer
-                        description: The maximum number of items returned per page.
-                      page:
-                        type: integer
-                        description: The current page number.
-                      total_items:
-                        type: integer
-                        description: The total number of items matching the query.
-                      total_pages:
-                        type: integer
-                        description: The total number of pages available.
-              example:
-                pools:
-                  - id: 8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj
-                    dex_id: CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK
-                    dex_name: Raydium CLMM
-                    chain: solana
-                    volume_usd: 829807420.5052161
-                    created_at: "2023-11-26T20:25:08.000Z"
-                    created_at_block_number: 232424998
-                    transactions: 273978
-                    price_usd: 228.70162563938777
-                    last_price_change_usd_5m: 0.05658913344914529
-                    last_price_change_usd_1h: -2.2971851257064313
-                    last_price_change_usd_24h: -10.883264918629346
-                    fee: 0
-                    tokens:
-                      - id: So11111111111111111111111111111111111111112
-                        name: Wrapped SOL
-                        symbol: SOL
-                        chain: solana
-                        decimals: 9
-                        added_at: "2024-10-04T08:30:05.000Z"
-                      - id: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
-                        name: USD Coin
-                        symbol: USDC
-                        chain: solana
-                        decimals: 6
-                        added_at: "2024-10-04T08:30:05.000Z"
-                page_info:
-                  limit: 100
-                  page: 1
-                  total_items: 121650
-                  total_pages: 1217
-        "400":
-          description: The specified network is invalid.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Invalid network.
-        "404":
-          description: Network not found.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Network not found.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   "/networks/{network}/pools/{pool_address}":
     get:
       operationId: getPoolDetails
@@ -610,6 +1002,12 @@ paths:
                     type: string
                   dex_name:
                     type: string
+                  base_token_id:
+                    type: string
+                    description: The base token ID for the price.
+                  quote_token_id:
+                    type: string
+                    description: The quote token ID for the price.
                   tokens:
                     type: array
                     items:
@@ -628,6 +1026,10 @@ paths:
                     type: number
                   price_time:
                     type: string
+                  last_updated:
+                    type: string
+                    format: date-time
+                    description: When the served data last changed.
                   24h:
                     type: object
                     properties:
@@ -757,6 +1159,7 @@ paths:
                   last_price: 233.8201620378884
                   last_price_usd: 234.1327298484414
                   price_time: "2025-01-27T16:12:16.000Z"
+                  last_updated: "2025-01-27T16:12:15Z"
                   24h:
                     last_price_usd_change: -7.991645970375927
                     volume_usd: 808169281.4395584
@@ -784,8 +1187,8 @@ paths:
                   30m:
                     last_price_usd_change: -0.6596647484596703
                     volume_usd: 17156573.023071297
-                    sell_usd: 8578286.5115356485
-                    buy_usd: 8578286.5115356485
+                    sell_usd: 8578286.511535648
+                    buy_usd: 8578286.511535648
                     sells: 2573
                     buys: 2989
                     txns: 5562
@@ -825,6 +1228,10 @@ paths:
                   error:
                     type: string
                     example: Pool not found.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   "/networks/{network}/pools/{pool_address}/ohlcv":
     get:
       operationId: getPoolOHLCV
@@ -836,17 +1243,28 @@ paths:
 
         potentially over a specified time range.  
 
-        - **start** is **required** to set the beginning of the data window.  
+        - **start** is **required** to set the beginning of the data window;
+        `-24h` selects the last 24 hours, and other relative offsets such as `-7d` work too.  
 
         - **end** is optional; if omitted, data is returned for the "start" date
         only.  
 
-        - **limit** can control how many data points to retrieve (e.g., maximum
-        of 100).  
+        - **limit** caps how many candles come back; the parameter below
+        states the maximum.  
 
-        - **interval** defines the granularity (e.g., 1h, 4h, 1d).  
+        - **interval** defines the granularity, from `1m` to `24h`; the
+        parameter below lists every value.  
 
         - **inverted_price** indicates whether to invert the main price ratio.
+
+        Plan limits (requests outside them get `403`):
+
+        | Plan | Intervals | History |
+        |------|-----------|---------|
+        | No API key | `1h` and up | last 24 hours |
+        | Free key | `10m` and longer | last 7 days |
+        | Dev | all | last 30 days |
+        | Pro | all | unlimited |
       parameters:
         - $ref: "#/components/parameters/networkParam"
         - $ref: "#/components/parameters/poolAddressParam"
@@ -862,7 +1280,9 @@ paths:
             application/json:
               schema:
                 type: array
-                description: An array of OHLCV records (candlesticks) matching the query criteria.
+                description:
+                  An array of OHLCV records (candlesticks) matching the query
+                  criteria.
                 items:
                   $ref: "#/components/schemas/OHLCVRecord"
               example:
@@ -893,6 +1313,10 @@ paths:
                   error:
                     type: string
                     example: Pool not found on this network.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   "/networks/{network}/pools/{pool_address}/transactions":
     get:
       operationId: getPoolTransactions
@@ -906,6 +1330,20 @@ paths:
         - $ref: "#/components/parameters/limitParam"
         - $ref: "#/components/parameters/networkParam"
         - $ref: "#/components/parameters/poolAddressParam"
+        - in: query
+          name: from
+          required: false
+          schema:
+            type: integer
+            format: int64
+          description: Filter transactions starting from this UNIX timestamp.
+        - in: query
+          name: to
+          required: false
+          schema:
+            type: integer
+            format: int64
+          description: Filter transactions up to this UNIX timestamp.
         - in: query
           name: cursor
           description: >-
@@ -956,6 +1394,59 @@ paths:
           description: The specified network or pool address is invalid.
         "404":
           description: Network not found or pool not found.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /networks/{network}/pools/filter:
+    get:
+      operationId: filterNetworkPools
+      tags:
+        - Pools
+      summary: Advanced pool filtering.
+      deprecated: true
+      description: Removed. Use `/networks/{network}/pools/search` instead.
+      parameters:
+        - $ref: "#/components/parameters/networkParam"
+      responses:
+        "410":
+          description: Removed. Use `/networks/{network}/pools/search` instead.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  "/networks/{network}/pools":
+    get:
+      operationId: getNetworkPools
+      tags:
+        - Pools
+      summary: Get top pools on a network.
+      deprecated: true
+      description: Removed. Use `/networks/{network}/pools/search` instead.
+      parameters:
+        - $ref: "#/components/parameters/networkParam"
+      responses:
+        "410":
+          description: Removed. Use `/networks/{network}/pools/search` instead.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /pools:
+    get:
+      operationId: getTopPools
+      tags:
+        - Pools
+      summary: Get top pools.
+      deprecated: true
+      description: Removed. Use `/pools/search` instead.
+      responses:
+        "410":
+          description: Removed. Use `/pools/search` instead.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   "/networks/{network}/tokens/{token_address}":
     get:
       operationId: getTokenDetails
@@ -1030,16 +1521,16 @@ paths:
                   15m:
                     volume: 420812.23249900003
                     volume_usd: 281063.0592944985
-                    buy_usd: 140531.52964724925
-                    sell_usd: 140531.52964724925
+                    buy_usd: 140531.52964724926
+                    sell_usd: 140531.52964724926
                     sells: 864
                     buys: 442
                     txns: 1306
                   5m:
                     volume: 75084.709753
                     volume_usd: 50179.69475522313
-                    buy_usd: 25089.847377611565
-                    sell_usd: 25089.847377611565
+                    buy_usd: 25089.847377611564
+                    sell_usd: 25089.847377611564
                     sells: 238
                     buys: 88
                     txns: 326
@@ -1064,120 +1555,28 @@ paths:
                   error:
                     type: string
                     example: Token not found on this network.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   "/networks/{network}/tokens/{token_address}/pools":
     get:
       operationId: getTokenPools
       tags:
         - Tokens
       summary: Get top X pools for a token.
-      description: >
-        Retrieves a paginated list of liquidity pools that involve the specified
-        token,
-
-        including details like current price, volume in USD, and tokens present
-        in each pool.
-
-        Useful for analytics, DEX front-ends, or portfolio tracking.
+      deprecated: true
+      description: Removed. Use `/networks/{network}/pools/search` with the `token_address` filter instead.
       parameters:
         - $ref: "#/components/parameters/networkParam"
         - $ref: "#/components/parameters/tokenAddressParam"
-        - $ref: "#/components/parameters/sortParam"
-        - $ref: "#/components/parameters/orderParam"
-        - name: reorder
-          in: query
-          required: false
-          schema:
-            type: boolean
-          description: If true, reorders the pool so that the token provided in `tokenAddressParam` becomes the primary token for all metrics and calculations. Useful when the provided token is not the first token in the pool.
-        - name: address
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter pools that contain this additional token address.
-          example: JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN
       responses:
-        "200":
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  pools:
-                    type: array
-                    description: A list of pool objects where the queried token is found.
-                    items:
-                      $ref: "#/components/schemas/PoolWithPrices"
-                  page_info:
-                    type: object
-                    description: Details about the current page of results.
-                    properties:
-                      limit:
-                        type: integer
-                        description: Number of items returned per page.
-                      page:
-                        type: integer
-                        description: The current page index.
-                      total_items:
-                        type: integer
-                        description: Total number of pools matching the token query.
-                      total_pages:
-                        type: integer
-                        description: Total number of pages available.
-              example:
-                pools:
-                  - id: C1MgLojNLWBKADvu9BHdtgzz1oZX4dZ5zGdGcgvvW8Wz
-                    dex_id: whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc
-                    dex_name: Orca
-                    chain: solana
-                    volume_usd: 105911239.86515124
-                    created_at: "2024-01-31T04:35:25.000Z"
-                    created_at_block_number: 245197261
-                    transactions: 86702
-                    price_usd: 1.0210156606745167
-                    last_price_change_usd_5m: -0.35550231159026024
-                    last_price_change_usd_1h: -0.46553223706307906
-                    last_price_change_usd_24h: -14.938708407216472
-                    fee: 0
-                    tokens:
-                      - id: JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN
-                        name: Jupiter
-                        symbol: JUP
-                        chain: solana
-                        decimals: 6
-                        added_at: "2024-09-11T04:37:20.000Z"
-                      - id: So11111111111111111111111111111111111111112
-                        name: Wrapped SOL
-                        symbol: SOL
-                        chain: solana
-                        decimals: 9
-                        added_at: "2024-10-04T08:30:05.000Z"
-                page_info:
-                  limit: 100
-                  page: 1
-                  total_items: 251
-                  total_pages: 3
-        "400":
-          description: The specified network or token address is invalid.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Invalid network or token address.
-        "404":
-          description: Network not found or token not found.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                    example: Token not found or no pools found for this token.
+        "410":
+          description: Removed. Use `/networks/{network}/pools/search` with the `token_address` filter instead.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /search:
     get:
       operationId: search
@@ -1335,6 +1734,10 @@ paths:
                   error:
                     type: string
                     example: Missing query parameter.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /stats:
     get:
       operationId: getStats
@@ -1366,10 +1769,10 @@ paths:
                     type: integer
                     description: Count of tokens recognized across all networks.
               example:
-                chains: 12
-                factories: 54
-                pools: 23456
-                tokens: 8920
+                chains: 36
+                factories: 241
+                pools: 41361610
+                tokens: 37676763
         "400":
           description: Bad request. Invalid parameters.
           content:
@@ -1390,6 +1793,10 @@ paths:
                   error:
                     type: string
                     example: Unexpected server error. Please try again later.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   "/networks/{network}/multi/prices":
     get:
       operationId: getTokenMultiPrices
@@ -1406,14 +1813,20 @@ paths:
           in: query
           required: true
           description: |
-            The token contract address. To query multiple tokens, repeat this parameter for each address.
-            For example: `?tokens=0xc02...ec7&tokens=0xda...1ec7`
+            A comma-separated list of token contract addresses.
+
+            **Constraints:**
+            - A maximum of **10** token addresses can be provided.
+            - The total length of the string must not exceed **2000** characters.
+
+            Example: `?tokens=0xc02...cc2,0xdac...ec7`
           schema:
             type: array
+            maxItems: 10
             items:
               type: string
           style: form
-          explode: true
+          explode: false
       responses:
         "200":
           description: Successful operation. Returns a list of prices.
@@ -1421,18 +1834,22 @@ paths:
             application/json:
               schema:
                 type: array
-                description: An array of price objects. Tokens for which a price could not be found are omitted from the list.
+                description:
+                  An array of price objects. Tokens for which a price could not be
+                  found are omitted from the list.
                 items:
                   $ref: "#/components/schemas/AssetPrice"
               example:
                 - id: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
                   chain: "ethereum"
-                  price_usd: 4400.5697112921534809
+                  price_usd: 4400.569711292153
                 - id: "0xdac17f958d2ee523a2206206994597c13d831ec7"
                   chain: "ethereum"
                   price_usd: 1.0002529851244053
         "400":
-          description: Bad request. The network is unsupported or the token list is invalid/empty.
+          description:
+            Bad request. The network is unsupported or the token list is
+            invalid/empty.
           content:
             application/json:
               schema:
@@ -1442,8 +1859,291 @@ paths:
                     type: string
                 example:
                   error: "at least one valid token required."
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /networks/{network}/tokens/filter:
+    get:
+      operationId: filterNetworkTokens
+      tags:
+        - Tokens
+      summary: Advanced token filtering.
+      deprecated: true
+      description: Removed. Use `/networks/{network}/tokens/search` instead.
+      parameters:
+        - $ref: "#/components/parameters/networkParam"
+      responses:
+        "410":
+          description: Removed. Use `/networks/{network}/tokens/search` instead.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /networks/{network}/tokens/top:
+    get:
+      operationId: getTopTokens
+      tags:
+        - Tokens
+      summary: Get top tokens on a network.
+      deprecated: true
+      description: Removed. Use `/networks/{network}/tokens/search` instead.
+      parameters:
+        - $ref: "#/components/parameters/networkParam"
+      responses:
+        "410":
+          description: Removed. Use `/networks/{network}/tokens/search` instead.
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /usage:
+    get:
+      operationId: getUsage
+      tags:
+        - Utils
+      summary: Get your plan and current-period credit usage.
+      description: |
+        Returns the plan the request was evaluated against and, for requests
+        authenticated with an API key on `api-pro.dexpaprika.com`, the account
+        email plus credits used and remaining in the current billing period.
+
+        Without an API key the response carries the plan only; all other
+        fields are omitted.
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plan]
+                properties:
+                  plan:
+                    type: string
+                    description: Plan the request was evaluated against (same value as the `X-Api-Plan` header), one of `keyless`, `free`, `dev`, `pro`, `enterprise`.
+                  email:
+                    type: string
+                    description: Account email of the API key owner. Omitted for keyless requests or when no email is on file.
+                  requests_used:
+                    type: integer
+                    description: Credits consumed in the current billing period, summed across all of the account's keys. Omitted when not applicable.
+                  requests_left:
+                    type: integer
+                    description: Credits remaining in the current billing period, including purchased packs and already-charged overage blocks. Omitted when not applicable.
+                  period_started_at:
+                    type: string
+                    format: date-time
+                    description: Start of the current period, the billing period on Dev and Pro or the rolling 30-day window on keyless and free keys. Omitted when not applicable.
+                  period_ends_at:
+                    type: string
+                    format: date-time
+                    description: End of the current billing period. Omitted when not applicable.
+              examples:
+                with_key:
+                  summary: Authenticated with an API key (api-pro)
+                  value:
+                    plan: pro
+                    email: user@example.com
+                    requests_used: 1250000
+                    requests_left: 3750000
+                    period_started_at: "2026-07-12T00:00:00Z"
+                    period_ends_at: "2026-08-12T00:00:00Z"
+                without_key:
+                  summary: No API key
+                  value:
+                    plan: free
+        "402":
+          $ref: "#/components/responses/QuotaExceeded"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
+  responses:
+    RateLimited:
+      description: >
+        Per-minute rate limit exceeded. Slow down and retry after the number
+        of seconds given in the `Retry-After` header. Credits are unaffected;
+        `credits` appears in the body only when the counters were already at
+        hand for the request.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+        RateLimit-Limit:
+          description: Request limit for the current minute.
+          schema:
+            type: integer
+        RateLimit-Remaining:
+          description: Requests left in the current minute.
+          schema:
+            type: integer
+        RateLimit-Reset:
+          description: Seconds until the minute limit resets.
+          schema:
+            type: integer
+        X-Credits-Limit:
+          description: Monthly credit limit for this caller.
+          schema:
+            type: integer
+        X-Credits-Remaining:
+          description: Credits left in the current month.
+          schema:
+            type: integer
+        X-Credits-Reset:
+          description: Seconds until the monthly credits reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/QuotaErrorBody"
+          example:
+            error: "rate_limited"
+            tier: "pro"
+            message: "Request rate exceeded. Retry in 12 seconds."
+            credits:
+              {
+                plan: 5000000,
+                packs: 0,
+                limit: 5000000,
+                used: 1240880,
+                remaining: 3759120,
+              }
+            retry_after: 12
+    QuotaExceeded:
+      description: >
+        Credit allowance exhausted. Retrying will not help; the body names the
+        available next step per tier: register (keyless), upgrade (free key),
+        or enable overage and raise your spend cap (Dev and Pro). `resets_at`
+        is present on Dev and Pro only and holds the end of the billing period
+        (UTC); keyless and free keys count over a rolling 30-day window.
+        Deliberately carries no `Retry-After` header.
+      headers:
+        X-Credits-Limit:
+          description: Monthly credit limit for this caller.
+          schema:
+            type: integer
+        X-Credits-Remaining:
+          description: Credits left in the current month.
+          schema:
+            type: integer
+        X-Credits-Reset:
+          description: Seconds until the monthly credits reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/QuotaErrorBody"
+          examples:
+            keyless:
+              summary: Keyless client over the rolling 30-day limit
+              value:
+                error: "payment_required"
+                tier: "keyless"
+                message: "Credit limit for the last 30 days reached for unauthenticated use. Register for a free API key to get more credits/month."
+                credits: { limit: 10000, used: 10000, remaining: 0 }
+            pro_plan_exhausted:
+              summary: Pro key with plan credits drained, overage off
+              value:
+                error: "payment_required"
+                tier: "pro"
+                message: "Monthly credit limit reached — enable overage in the portal."
+                credits:
+                  {
+                    plan: 5000000,
+                    packs: 0,
+                    limit: 5000000,
+                    used: 5000000,
+                    remaining: 0,
+                  }
+                overage: { enabled: false }
+                resets_at: "2026-09-01T00:00:00Z"
   schemas:
+    QuotaErrorBody:
+      type: object
+      description: >
+        Structured body carried by every 402 and 429 emitted by the billing
+        gate. The shape is constant across scenarios; only fields describing
+        an available action appear. `message` is always a top-level string,
+        so clients parsing the legacy `{"message": ...}` shape keep working.
+      required: [error, tier, message]
+      properties:
+        error:
+          type: string
+          enum: [payment_required, rate_limited]
+          description: Machine-readable discriminator matching the status code.
+        tier:
+          type: string
+          enum: [keyless, free, dev, pro, enterprise]
+          description: The billing tier the request was evaluated against.
+        message:
+          type: string
+          description: Human-readable message naming the next action.
+        credits:
+          type: object
+          description: >
+            Credit counters for the current period. One credit is one request.
+            `plan` and `packs` are split out for Pro keys only. `limit` is
+            plan + packs; usage served through overage can exceed it.
+          properties:
+            plan:
+              type: integer
+              format: int64
+            packs:
+              type: integer
+              format: int64
+            limit:
+              type: integer
+              format: int64
+            used:
+              type: integer
+              format: int64
+            remaining:
+              type: integer
+              format: int64
+        overage:
+          type: object
+          description: >
+            Overage state, present on Pro 402 bodies. Money amounts are
+            decimal strings, never floats.
+          properties:
+            enabled:
+              type: boolean
+            cap:
+              type: string
+              example: "200.00"
+            used:
+              type: string
+              example: "200.00"
+            block:
+              type: string
+              example: "20.00 per 1M credits"
+        resets_at:
+          type: string
+          format: date-time
+          description: When the monthly allowance rolls over (UTC). 402 only.
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying. 429 only.
+        offer:
+          type: object
+          description: Early-adopter offer, present on the free-tier 402 only.
+          properties:
+            description:
+              type: string
+            expires_at:
+              type: string
+              format: date-time
+        links:
+          type: object
+          additionalProperties:
+            type: string
+          description: >
+            Next-step URLs. Keys vary by scenario: register, upgrade, packs,
+            portal, usage, docs. Absent until the customer-facing pages go
+            live.
     ArrayOfDexes:
       type: object
       description: A paginated response containing a list of DEX objects.
@@ -1456,17 +2156,33 @@ components:
             properties:
               dex_name:
                 type: string
-                description: Internal or human-readable name of the DEX.
+                description: Human readable name of the DEX.
+              dex_id:
+                type: string
+                description: ID for the DEX.
               chain:
                 type: string
                 description: The blockchain network this DEX resides on.
               protocol:
                 type: string
                 description: Protocol or underlying technology of the DEX.
+              volume_usd_24h:
+                type: number
+                description: The trading volume over the last 24 hours in USD.
+              txns_24h:
+                type: integer
+                description: The number of transactions on this DEX over the last 24 hours.
+              pools_count:
+                type: integer
+                description: The total number of pools currently tracked for this DEX.
             example:
-              dex_name: curve
+              dex_name: Uniswap V2
+              dex_id: uniswap_v2
               chain: ethereum
-              protocol: curve
+              protocol: uniswapv2
+              volume_usd_24h: 50000000
+              txns_24h: 15000
+              pools_count: 1200
         page_info:
           type: object
           description: Information about the current page in a paginated result set.
@@ -1485,8 +2201,8 @@ components:
               description: Total number of pages available.
       example:
         dexes:
-          - id: uniswap_v2
-            name: Uniswap V2
+          - dex_id: uniswap_v2
+            dex_name: Uniswap V2
         page_info:
           limit: 100
           page: 1
@@ -1507,7 +2223,9 @@ components:
           description: 'Ticker symbol of the token (e.g., "USDC").'
         chain:
           type: string
-          description: 'Blockchain network where the token exists (e.g., "ethereum", "solana").'
+          description:
+            'Blockchain network where the token exists (e.g., "ethereum",
+            "solana").'
         decimals:
           type: number
           description: "Decimal precision of the token (e.g., 6 for USDC)."
@@ -1517,14 +2235,22 @@ components:
         description:
           type: string
           description: >-
-            A detailed overview of the token's purpose, use cases, or
-            background.
+            A detailed overview of the token's purpose, use cases, or background.
         website:
           type: string
           description: Official website URL for the token/project.
+        telegram:
+          type: string
+          description: Official Telegram URL for the token/project.
+        twitter:
+          type: string
+          description: Official Twitter URL for the token/project.
         explorer:
           type: string
           description: Link to a block explorer or analytics page for this token.
+        has_image:
+          type: boolean
+          description: Indicates whether the token has an associated image/logo.
         added_at:
           type: string
           format: date-time
@@ -1535,7 +2261,7 @@ components:
         last_updated:
           type: string
           format: date-time
-          description: When the token data was last updated.
+          description: When the served data last changed. Keyless and free-key data refreshes about once a minute, paid data is realtime.
         summary:
           $ref: "#/components/schemas/TokenSummary"
       example:
@@ -1650,6 +2376,415 @@ components:
           buys: 0
           txns: 1
           last_price_usd_change: 0.0
+
+    TopTokenTimeData:
+      type: object
+      properties:
+        volume_usd:
+          type: number
+        buys:
+          type: [integer, "null"]
+        sells:
+          type: [integer, "null"]
+        txns:
+          type: integer
+        last_price_usd_change:
+          type: [number, "null"]
+
+    PoolSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoolSearchResult"
+        has_next_page:
+          type: boolean
+        next_cursor:
+          type: string
+        query:
+          $ref: "#/components/schemas/PoolSearchQuery"
+
+    NetworksPoolSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoolSearchResult"
+        has_next_page:
+          type: boolean
+        next_cursor:
+          type: string
+        query:
+          $ref: "#/components/schemas/NetworksPoolSearchQuery"
+
+    DetailedPoolToken:
+      allOf:
+        - $ref: "#/components/schemas/Token"
+        - type: object
+          properties:
+            fdv:
+              type: number
+            24h:
+              $ref: "#/components/schemas/TopTokenTimeData"
+            6h:
+              $ref: "#/components/schemas/TopTokenTimeData"
+            1h:
+              $ref: "#/components/schemas/TopTokenTimeData"
+            30m:
+              $ref: "#/components/schemas/TopTokenTimeData"
+            15m:
+              $ref: "#/components/schemas/TopTokenTimeData"
+            5m:
+              $ref: "#/components/schemas/TopTokenTimeData"
+            1m:
+              $ref: "#/components/schemas/TopTokenTimeData"
+
+    PoolSearchQuery:
+      type: object
+      properties:
+        network:
+          type: string
+        limit:
+          type: integer
+        cursor:
+          type: string
+        volume_usd_24h_min:
+          type: number
+        volume_usd_24h_max:
+          type: number
+        volume_usd_7d_min:
+          type: number
+        volume_usd_7d_max:
+          type: number
+        volume_usd_30d_min:
+          type: number
+        volume_usd_30d_max:
+          type: number
+        liquidity_usd_min:
+          type: number
+        liquidity_usd_max:
+          type: number
+        txns_24h_min:
+          type: integer
+        txns_24h_max:
+          type: integer
+        created_after:
+          type: integer
+          format: int64
+        created_before:
+          type: integer
+          format: int64
+        price_usd_min:
+          type: number
+        price_usd_max:
+          type: number
+        price_change_percentage_6h_min:
+          type: number
+        price_change_percentage_6h_max:
+          type: number
+        price_change_percentage_1h_min:
+          type: number
+        price_change_percentage_1h_max:
+          type: number
+        price_change_percentage_5m_min:
+          type: number
+        price_change_percentage_5m_max:
+          type: number
+        price_change_percentage_24h_min:
+          type: number
+        price_change_percentage_24h_max:
+          type: number
+        dex_name:
+          type: string
+        order_by:
+          type: string
+          enum:
+            [
+              volume_usd_24h,
+              volume_usd_7d,
+              volume_usd_30d,
+              liquidity_usd,
+              txns_24h,
+              created_at,
+              price_usd,
+              price_change_percentage_24h,
+              price_change_percentage_6h,
+              price_change_percentage_1h,
+              price_change_percentage_5m,
+            ]
+        sort:
+          type: string
+          enum: [asc, desc]
+        detailed:
+          type: boolean
+
+    NetworksPoolSearchQuery:
+      type: object
+      properties:
+        chains:
+          type: string
+        limit:
+          type: integer
+        cursor:
+          type: string
+        volume_usd_24h_min:
+          type: number
+        volume_usd_24h_max:
+          type: number
+        volume_usd_7d_min:
+          type: number
+        volume_usd_7d_max:
+          type: number
+        volume_usd_30d_min:
+          type: number
+        volume_usd_30d_max:
+          type: number
+        liquidity_usd_min:
+          type: number
+        liquidity_usd_max:
+          type: number
+        txns_24h_min:
+          type: integer
+        txns_24h_max:
+          type: integer
+        created_after:
+          type: integer
+          format: int64
+        created_before:
+          type: integer
+          format: int64
+        price_usd_min:
+          type: number
+        price_usd_max:
+          type: number
+        price_change_percentage_6h_min:
+          type: number
+        price_change_percentage_6h_max:
+          type: number
+        price_change_percentage_1h_min:
+          type: number
+        price_change_percentage_1h_max:
+          type: number
+        price_change_percentage_5m_min:
+          type: number
+        price_change_percentage_5m_max:
+          type: number
+        price_change_percentage_24h_min:
+          type: number
+        price_change_percentage_24h_max:
+          type: number
+        dex_name:
+          type: string
+        order_by:
+          type: string
+          enum:
+            [
+              volume_usd_24h,
+              volume_usd_7d,
+              volume_usd_30d,
+              liquidity_usd,
+              txns_24h,
+              created_at,
+              price_usd,
+              price_change_percentage_24h,
+              price_change_percentage_6h,
+              price_change_percentage_1h,
+              price_change_percentage_5m,
+            ]
+        sort:
+          type: string
+          enum: [asc, desc]
+        detailed:
+          type: boolean
+
+    PoolSearchResult:
+      type: object
+      description: Information about a specific liquidity pool, including price and volume data.
+      properties:
+        id:
+          type: string
+          description: Unique identifier or address of the pool.
+        dex_id:
+          type: string
+          description: Identifier of the DEX where this pool resides.
+        dex_name:
+          type: string
+          description: 'Human-readable DEX name (e.g., "Uniswap V3").'
+        chain:
+          type: string
+          description: The blockchain network this pool resides on (e.g., "ethereum", "solana").
+        created_at_block_number:
+          type: number
+          description: Block number at which this pool was created.
+        created_at:
+          type: string
+          format: date-time
+        volume_usd_24h:
+          type: number
+        transactions_24h:
+          type: number
+        price_usd:
+          type: number
+        price_change_percentage_5m:
+          type: [number, "null"]
+        price_change_percentage_1h:
+          type: [number, "null"]
+        price_change_percentage_6h:
+          type: [number, "null"]
+        price_change_percentage_24h:
+          type: [number, "null"]
+        fee:
+          type: [number, "null"]
+        volume_usd_7d:
+          type: number
+        volume_usd_30d:
+          type: number
+        liquidity_usd:
+          type: number
+        tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/DetailedPoolToken"
+
+    TokenSearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EnrichedTokenSearchResult"
+        has_next_page:
+          type: boolean
+        next_cursor:
+          type: string
+        query:
+          $ref: "#/components/schemas/TokenSearchQuery"
+
+    TokenSearchQuery:
+      type: object
+      properties:
+        chains:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+        cursor:
+          type: string
+        order_by:
+          type: string
+          enum:
+            [
+              volume_usd_24h,
+              volume_usd_7d,
+              volume_usd_30d,
+              price_usd,
+              liquidity_usd,
+              txns_24h,
+              price_change_percentage_24h,
+              created_at,
+              fdv_usd,
+            ]
+        sort:
+          type: string
+          enum: [asc, desc]
+        volume_usd_24h_min:
+          type: number
+        volume_usd_24h_max:
+          type: number
+        volume_usd_7d_min:
+          type: number
+        volume_usd_7d_max:
+          type: number
+        volume_usd_30d_min:
+          type: number
+        volume_usd_30d_max:
+          type: number
+        liquidity_usd_min:
+          type: number
+        liquidity_usd_max:
+          type: number
+        txns_24h_min:
+          type: integer
+        txns_24h_max:
+          type: integer
+        price_usd_min:
+          type: number
+        price_usd_max:
+          type: number
+        price_change_percentage_24h_min:
+          type: number
+        price_change_percentage_24h_max:
+          type: number
+        fdv_usd_min:
+          type: number
+        fdv_usd_max:
+          type: number
+        created_after:
+          type: integer
+          format: int64
+        created_before:
+          type: integer
+          format: int64
+        detailed:
+          type: boolean
+
+    EnrichedTokenSearchResult:
+      type: object
+      description: A single token matching the search criteria, enriched with metadata.
+      properties:
+        chain:
+          type: string
+          description: The blockchain network this token resides on.
+        address:
+          type: string
+          description: The unique contract address of the token.
+        price_usd:
+          type: number
+        price_change_percentage_24h:
+          type: number
+        volume_usd_24h:
+          type: number
+        volume_usd_7d:
+          type: number
+        volume_usd_30d:
+          type: number
+        liquidity_usd:
+          type: number
+        fdv_usd:
+          type: number
+        txns_24h:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        name:
+          type: string
+        symbol:
+          type: string
+        decimals:
+          type: integer
+        has_image:
+          type: boolean
+        pools:
+          type: integer
+        24h:
+          $ref: "#/components/schemas/TopTokenTimeData"
+        6h:
+          $ref: "#/components/schemas/TopTokenTimeData"
+        1h:
+          $ref: "#/components/schemas/TopTokenTimeData"
+        30m:
+          $ref: "#/components/schemas/TopTokenTimeData"
+        15m:
+          $ref: "#/components/schemas/TopTokenTimeData"
+        5m:
+          $ref: "#/components/schemas/TopTokenTimeData"
+        1m:
+          $ref: "#/components/schemas/TopTokenTimeData"
+
     TimeIntervalMetrics:
       type: object
       description: >
@@ -1659,8 +2794,7 @@ components:
         volume:
           type: number
           description: >-
-            Total trading volume in the token's native currency for the
-            interval.
+            Total trading volume in the token's native currency for the interval.
         volume_usd:
           type: number
           description: Total trading volume in USD for the interval.
@@ -1681,11 +2815,15 @@ components:
           description: Total number of transactions during the interval.
         last_price_usd_change:
           type: number
-          description: The percentage change between the current price and the price from the given interval.
+          description:
+            The percentage change between the current price and the price from
+            the given interval.
 
     OHLCVRecord:
       type: object
-      description: Represents a single Open-High-Low-Close-Volume (OHLCV) data point for a specific time interval.
+      description:
+        Represents a single Open-High-Low-Close-Volume (OHLCV) data point
+        for a specific time interval.
       properties:
         time_open:
           type: string
@@ -1797,19 +2935,49 @@ components:
           format: date-time
           description: The timestamp when this transaction was created.
 
-    Network:
+    NetworkMetrics:
       type: object
-      description: Metadata about a blockchain network.
+      description: Aggregated statistics for a blockchain network.
       properties:
         id:
           type: string
-          description: 'String identifier for the network (e.g., "ethereum", "solana").'
+          description: The identifier of the blockchain network.
+          example: "ethereum"
         display_name:
           type: string
-          description: 'Human-readable display name for the network (e.g., "Ethereum").'
+          description: Human readable name of the blockchain network.
+          example: "Ethereum"
+        volume_usd_24h:
+          type: number
+          description:
+            Total trading volume in USD over the last 24 hours across all DEXes
+            on the network.
+          example: 921653477.2562501
+        txns_24h:
+          type: integer
+          description:
+            Total number of transactions across all DEXes on the network in the
+            last 24 hours.
+          example: 101546
+        pools_count:
+          type: integer
+          description:
+            Total number of active liquidity pools across all DEXes on the
+            network.
+          example: 4583
+      required:
+        - id
+        - display_name
+        - volume_usd_24h
+        - txns_24h
+        - pools_count
       example:
         id: "ethereum"
         display_name: "Ethereum"
+        volume_usd_24h: 921653477.2562501
+        txns_24h: 101546
+        pools_count: 4583
+
     PoolWithPrices:
       type: object
       description: >-
@@ -1827,7 +2995,9 @@ components:
           description: 'Human-readable DEX name (e.g., "Uniswap V3").'
         chain:
           type: string
-          description: The blockchain network this pool resides on (e.g., "ethereum", "solana").
+          description:
+            The blockchain network this pool resides on (e.g., "ethereum",
+            "solana").
         created_at_block_number:
           type: number
           description: Block number at which this pool was created.
@@ -1864,7 +3034,9 @@ components:
             USD price change over the last 24 hours as a percentage.
         fee:
           type: [number, "null"]
-          description: "Trading fee (e.g., 0.3 for 0.3%) associated with this pool. Null indicates fee information is not collected."
+          description:
+            "Trading fee (e.g., 0.3 for 0.3%) associated with this pool. Null
+            indicates fee information is not collected."
         tokens:
           type: array
           description: The tokens participating in this liquidity pool.
@@ -1892,6 +3064,11 @@ components:
           type: number
           description: The current price of the token in USD.
           example: 1850.75
+        last_updated:
+          type: string
+          format: date-time
+          description: When the served data last changed. Keyless and free-key data refreshes about once a minute, paid data is realtime. Returned by the token price endpoints only.
+          example: "2025-01-27T16:12:15Z"
 
   parameters:
     pageParam:
@@ -1901,7 +3078,7 @@ components:
         type: integer
         minimum: 0
         maximum: 1000
-      description: Zero-based page index for paginated results.
+      description: Page number, starting at 1. A value of 0 is served as page 1.
     limitParam:
       name: limit
       in: query
@@ -1920,18 +3097,6 @@ components:
           - asc
           - desc
       description: Sort order for the requested data (ascending or descending).
-    orderParam:
-      name: order_by
-      in: query
-      schema:
-        type: string
-        enum:
-          - volume_usd
-          - price_usd
-          - transactions
-          - last_price_change_usd_24h
-          - created_at
-      description: Field by which to order the returned data.
     networkParam:
       name: network
       in: path
@@ -1975,15 +3140,17 @@ components:
       name: start
       in: query
       required: true
+      example: "-24h"
       schema:
         type: string
         description: |
-          Start time for the OHLCV data.
+          Start time for the OHLCV data. Required; "-24h" selects the last 24 hours.
           Accepted formats:
+          - Relative offset from now (e.g., "-24h", "-7d", "-90m"; units: s, m, h, d)
           - Unix timestamp
           - RFC3339 timestamp (e.g., "2023-10-27T08:07:20Z")
           - Date (e.g., "2023-10-27", interpreted as 00:00:00 UTC)
-        example: "1741507640"
+        example: "-24h"
     ohlcvEndParam:
       name: end
       in: query
@@ -1991,8 +3158,9 @@ components:
       schema:
         type: string
         description: |
-          Start time for the OHLCV data.
+          End time for the OHLCV data.
           Accepted formats:
+          - Relative offset from now (e.g., "-1h", "-2d")
           - Unix timestamp
           - RFC3339 timestamp (e.g., "2023-10-27T10:00:00Z")
           - Date (e.g., "2023-10-27", interpreted as 00:00:00 UTC)
@@ -2004,9 +3172,9 @@ components:
       schema:
         type: integer
         format: int32
-        default: 1
+        default: 10
         minimum: 1
-        maximum: 366
+        maximum: 1000
       description: Maximum number of OHLCV records to return.
     ohlcvIntervalParam:
       name: interval
@@ -2016,7 +3184,9 @@ components:
         type: string
         enum: ["1m", "5m", "10m", "15m", "30m", "1h", "6h", "12h", "24h"]
         default: "24h"
-      description: The time interval for each OHLCV record (candle).
+      description: |
+        The time interval for each OHLCV record (candle). `1m` and `5m` need a
+        Dev or Pro plan; intervals below `1h` need at least a free API key.
     ohlcvInvertedPriceParam:
       name: inversed
       in: query

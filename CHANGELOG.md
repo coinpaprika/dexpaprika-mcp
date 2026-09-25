@@ -13,6 +13,8 @@ All notable changes to the DexPaprika MCP Server will be documented in this file
 - **`getCapabilities` reported 30,000 keyless credits.** Keyless went to 10,000 per IP per rolling 30 days on 2026-09-23.
 - **`limit` max is 1000, not 366**, matching the API and the hosted server.
 - **README example** used `start: "2023-01-01"`, which returns 403 without a key.
+- **`end` was described as capped to 1 year after `start`.** The API has no such cap: one request on a paid key returned 692 daily candles spanning November 2024 to September 2026. The claim is gone from the tool, the parameter and the README.
+- **The bundled `openapi.yml` still said OHLCV `limit` stops at 366** and knew nothing about relative `start`. It is now the current spec from the API.
 
 ## [2.5.1] - 2026-09-16
 
