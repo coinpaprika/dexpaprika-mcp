@@ -269,7 +269,7 @@ const prices = await getTokenMultiPrices({
 - **Missing data**: Some newer tokens/pools may have incomplete historical data
 - **Timeout errors**: Large data requests may take longer, consider pagination
 - **Network errors**: Check network connectivity, the service requires internet access
-- **OHLCV limitations**: Maximum range between start and end dates is 1 year; use pagination for longer timeframes. Without a key OHLCV covers the last 24 hours at `1h` and longer (`start: "-24h"`); a free key opens 7 days at `10m` and longer. See [OHLCV limits by plan](https://docs.dexpaprika.com/knowledge-base/rate-limits#ohlcv-limits-by-plan)
+- **OHLCV limitations**: One request returns up to 1000 candles (`limit`); for a longer span, move `start` forward and ask again. Without a key OHLCV covers the last 24 hours at `1h` and longer (`start: "-24h"`); a free key opens 7 days at `10m` and longer. See [OHLCV limits by plan](https://docs.dexpaprika.com/knowledge-base/rate-limits#ohlcv-limits-by-plan)
 - **Empty OHLCV**: Pool may be too new. Use `getPoolTransactions` instead
 
 ## Development

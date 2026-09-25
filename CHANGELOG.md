@@ -9,8 +9,12 @@ All notable changes to the DexPaprika MCP Server will be documented in this file
 - **The OHLCV window per plan is in the description and in `common_pitfalls`.** Without a key: the last 24 hours at `1h` and longer. A free key opens 7 days at `10m` and longer.
 
 ### Fixed
+- **A 403 now reaches the agent with the API's message.** A request outside the plan's OHLCV window came back as `API request failed: 403 Forbidden` with the body dropped, so the agent could not tell that a shorter window, a coarser interval or a key would work. The error message is now the API's own (`OHLCV history beyond the last 24 hours requires an API key (free key: 7 days, Dev plan: 30 days, Pro plan: unlimited)`), marked not retryable. A 400 carries the API message too (`Bad request: invalid start`) instead of the status text.
+- **`getCapabilities` reported 30,000 keyless credits.** Keyless went to 10,000 per IP per rolling 30 days on 2026-09-23.
 - **`limit` max is 1000, not 366**, matching the API and the hosted server.
 - **README example** used `start: "2023-01-01"`, which returns 403 without a key.
+- **`end` was described as capped to 1 year after `start`.** The API has no such cap: one request on a paid key returned 692 daily candles spanning November 2024 to September 2026. The claim is gone from the tool, the parameter and the README.
+- **The bundled `openapi.yml` still said OHLCV `limit` stops at 366** and knew nothing about relative `start`. It is now the current spec from the API.
 
 ## [2.5.1] - 2026-09-16
 
