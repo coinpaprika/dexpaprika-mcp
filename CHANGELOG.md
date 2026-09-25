@@ -2,6 +2,16 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.5.2] - 2026-09-25
+
+### Changed
+- **`getPoolOHLCV` recommends a relative `start`.** The API accepts an offset from now since 2026-09-25, so `start: "-24h"` means the last 24 hours. An agent does not know today's date and used to guess an absolute one; without a key, anything older than 24 hours now returns 403. The tool and parameter descriptions, the server instructions and the `getCapabilities` workflow hint lead with `-24h` / `-7d`, and `end` takes the same forms.
+- **The OHLCV window per plan is in the description and in `common_pitfalls`.** Without a key: the last 24 hours at `1h` and longer. A free key opens 7 days at `10m` and longer.
+
+### Fixed
+- **`limit` max is 1000, not 366**, matching the API and the hosted server.
+- **README example** used `start: "2023-01-01"`, which returns 403 without a key.
+
 ## [2.5.1] - 2026-09-16
 
 ### Fixed
