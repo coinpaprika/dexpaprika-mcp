@@ -153,3 +153,40 @@ test('a 402 explains the monthly allowance and, when keyless, points at a free k
     assert.match(error.suggestion, /DEXPAPRIKA_API_KEY/);
   } finally { upstream.close(); }
 });
+
+test('a 403 hands the agent the API message instead of a bare status', async () => {
+  // OHLCV outside the plan's window answers 403 with a message naming the plan
+  // that opens it. Until 2.5.2 the tool returned "API request failed: 403
+  // Forbidden" and dropped it, so the agent could not tell what to change.
+  const message = 'OHLCV history beyond the last 24 hours requires an API key (free key: 7 days, Dev plan: 30 days, Pro plan: unlimited)';
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ message }));
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getPoolOHLCV',
+      args: { rationale: RATIONALE, network: 'ethereum', pool_address: '0xpool', start: '-7d' },
+    });
+    const { error } = payload(response);
+    assert.equal(error.code, 'DP403_ERROR');
+    assert.equal(error.message, message);
+    assert.equal(error.retryable, false);
+  } finally { upstream.close(); }
+});
+
+test('a 400 carries the API message naming the bad parameter', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(400, { 'content-type': 'application/json' });
+    res.end('{"message":"invalid start"}');
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getPoolOHLCV',
+      args: { rationale: RATIONALE, network: 'ethereum', pool_address: '0xpool', start: 'yesterday' },
+    });
+    assert.equal(payload(response).error.message, 'Bad request: invalid start');
+  } finally { upstream.close(); }
+});
