@@ -179,6 +179,19 @@ function parseDeprecationHint(body) {
   return { replacement, apiMessage };
 }
 
+// The API's own explanation from an error body, or null. A 403 on OHLCV names
+// the plan that opens the requested window or interval, and a 400 names the
+// parameter at fault; both are what an agent needs to correct the call.
+function parseApiMessage(body) {
+  if (!body || typeof body !== 'string') return null;
+  try {
+    const parsed = JSON.parse(body);
+    return parsed && typeof parsed.message === 'string' && parsed.message ? parsed.message : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
   // Generic, self-documenting deprecation handling: if the error body carries a
   // "replacement" hint, surface BOTH the API message and the replacement path,
@@ -275,10 +288,12 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
     );
   }
 
+  const apiMessage = parseApiMessage(body);
+
   if (status === 400) {
     return buildErrorResponse(
       ErrorCodes.DP400_MISSING_REQUIRED,
-      `Bad request: ${statusText}`,
+      `Bad request: ${apiMessage ?? statusText}`,
       false,
       'Check that all required parameters are provided with correct formats',
       undefined,
@@ -286,9 +301,20 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
     );
   }
 
+  if (status === 403 && apiMessage) {
+    return buildErrorResponse(
+      `DP${status}_ERROR`,
+      apiMessage,
+      false,
+      'Retrying unchanged returns the same 403. The message says what this request needs: for getPoolOHLCV, a shorter window or a coarser interval, or an API key or plan that allows it.',
+      undefined,
+      { endpoint, status },
+    );
+  }
+
   return buildErrorResponse(
     `DP${status}_ERROR`,
-    `API request failed: ${status} ${statusText}`,
+    apiMessage ? `API request failed: ${status} ${statusText}: ${apiMessage}` : `API request failed: ${status} ${statusText}`,
     false,
     'Check API documentation or try again later',
     undefined,
@@ -647,12 +673,13 @@ function buildCapabilitiesDocument() {
       free_tier: true,             // a free tier exists; it is metered, not unlimited
       key_required_to_start: false,
       // These four move. They changed on 2026-08-11 (keyless 400K -> 50K, free
-      // key 500K -> 300K) and again with Pricing v2.0 on 2026-09-15 (30K and
-      // 100K, counted over a rolling 30 days rather than a calendar month).
+      // key 500K -> 300K), again with Pricing v2.0 on 2026-09-15 (30K and
+      // 100K, counted over a rolling 30 days rather than a calendar month), and
+      // keyless alone on 2026-09-23 (30K -> 10K).
       // This document is frozen into each published tarball, so an agent that
       // treats them as current will eventually be wrong. limits_url is the
       // live source and takes precedence over anything hard-coded here.
-      free_tier_credits_per_month: 30_000,         // keyless, per IP, rolling 30 days
+      free_tier_credits_per_month: 10_000,         // keyless, per IP, rolling 30 days
       free_key_credits_per_month: 100_000,         // free API key, rolling 30 days
       free_tier_requests_per_minute: 15,           // keyless, per IP
       free_key_requests_per_minute: 30,            // with a free API key
@@ -996,7 +1023,7 @@ registerReadTool(
 // ─── getPoolOHLCV ────────────────────────────────────────────────────────────
 registerReadTool(
   'getPoolOHLCV',
-  'Get historical OHLCV candles (open, high, low, close, volume) for one pool over a time range, returned as a time-series array. Read-only and keyless. Use for \'price history of this pair\', \'hourly chart for the last day\', or backtesting; for the single current price use getPoolDetails instead. Params: network (required); pool_address (required); start (required; easiest as a relative offset from now such as \'-24h\', so you need not know today\'s date; also Unix seconds, RFC3339 or yyyy-mm-dd); end (optional, capped to 1 year after start); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 100, max 1000 candles); inversed (optional bool, default false). History depth and interval depend on the plan: without a key, the last 24 hours at \'1h\' and longer; a free key (DEXPAPRIKA_API_KEY) opens 7 days at \'10m\' and longer. Asking for more returns 403.',
+  'Get historical OHLCV candles (open, high, low, close, volume) for one pool over a time range, returned as a time-series array. Read-only and keyless. Use for \'price history of this pair\', \'hourly chart for the last day\', or backtesting; for the single current price use getPoolDetails instead. Params: network (required); pool_address (required); start (required; easiest as a relative offset from now such as \'-24h\', so you need not know today\'s date; also Unix seconds, RFC3339 or yyyy-mm-dd); end (optional, capped to 1 year after start); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 100, max 1000 candles); inversed (optional bool, default false). History depth and interval depend on the plan: without a key, the last 24 hours at \'1h\' and longer; a free key (DEXPAPRIKA_API_KEY) opens 7 days at \'10m\' and longer. Asking for more returns 403 with a message naming the plan that allows it.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
