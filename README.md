@@ -226,9 +226,9 @@ const filteredPools = await getNetworkPoolsFilter({
 const ohlcvData = await getPoolOHLCV({
   network: "ethereum",
   pool_address: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
-  start: "2023-01-01",
-  interval: "24h",
-  limit: 30
+  start: "-24h",     // last 24 hours; works without a key
+  interval: "1h",
+  limit: 24
 });
 
 // Batch prices for multiple tokens (max 10):
@@ -245,7 +245,7 @@ const prices = await getTokenMultiPrices({
 
 - "Analyze the JUP token on Solana. Fetch price, volume, and top liquidity pools."
 - "Compare trading volume between Uniswap V3 and SushiSwap on Ethereum."
-- "Get the 7-day OHLCV data for SOL/USDC on Raydium and plot a price chart."
+- "Get hourly OHLCV for the last day for SOL/USDC on Raydium and plot a price chart."
 - "Find the top 5 pools by liquidity on Fantom network and analyze their fee structures."
 - "Get recent transactions for the ETH/USDT pool on Uniswap and analyze buy vs sell pressure."
 - "Show me the top 10 pools on Ethereum by 24h volume."
@@ -269,7 +269,7 @@ const prices = await getTokenMultiPrices({
 - **Missing data**: Some newer tokens/pools may have incomplete historical data
 - **Timeout errors**: Large data requests may take longer, consider pagination
 - **Network errors**: Check network connectivity, the service requires internet access
-- **OHLCV limitations**: Maximum range between start and end dates is 1 year; use pagination for longer timeframes
+- **OHLCV limitations**: Maximum range between start and end dates is 1 year; use pagination for longer timeframes. Without a key OHLCV covers the last 24 hours at `1h` and longer (`start: "-24h"`); a free key opens 7 days at `10m` and longer. See [OHLCV limits by plan](https://docs.dexpaprika.com/knowledge-base/rate-limits#ohlcv-limits-by-plan)
 - **Empty OHLCV**: Pool may be too new. Use `getPoolTransactions` instead
 
 ## Development
