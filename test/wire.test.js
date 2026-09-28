@@ -190,3 +190,60 @@ test('a 400 carries the API message naming the bad parameter', async () => {
     assert.equal(payload(response).error.message, 'Bad request: invalid start');
   } finally { upstream.close(); }
 });
+
+/** The query parameters of the one request the upstream saw. */
+function sentParams(upstream) {
+  assert.equal(upstream.seen.length, 1, 'expected exactly one upstream request');
+  return new URL(upstream.seen[0].url, 'http://upstream.test').searchParams;
+}
+
+test('created_after and created_before reach the wire as relative offsets', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"results":[],"has_next_page":false}');
+  });
+  try {
+    await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getNetworkPoolsFilter',
+      args: { rationale: RATIONALE, network: 'ethereum', created_after: '-24h', created_before: '-1h' },
+    });
+    const q = sentParams(upstream);
+    assert.equal(q.get('created_after'), '-24h');
+    assert.equal(q.get('created_before'), '-1h');
+  } finally { upstream.close(); }
+});
+
+test('a numeric created_after still works and is sent as it is', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"results":[],"has_next_page":false}');
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'filterNetworkTokens',
+      args: { rationale: RATIONALE, network: 'ethereum', created_after: 1790000000 },
+    });
+    assert.equal(response.error, undefined, 'a number must pass input validation');
+    assert.equal(sentParams(upstream).get('created_after'), '1790000000');
+  } finally { upstream.close(); }
+});
+
+test('transactions from and to accept a relative offset and an RFC3339 time with an offset', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"transactions":[],"page_info":{"page":1,"limit":10,"total_items":0,"total_pages":0}}');
+  });
+  try {
+    await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getPoolTransactions',
+      args: { rationale: RATIONALE, network: 'ethereum', pool_address: '0xpool', from: '-1h', to: '2026-09-28T12:00:00+02:00' },
+    });
+    const q = sentParams(upstream);
+    assert.equal(q.get('from'), '-1h');
+    // Unencoded, the + would arrive as a space and the API would reject the time.
+    assert.equal(q.get('to'), '2026-09-28T12:00:00+02:00');
+  } finally { upstream.close(); }
+});

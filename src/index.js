@@ -455,7 +455,7 @@ const SERVER_INSTRUCTIONS = [
   '## Time formats',
   '- `getPoolOHLCV.start` / `.end`: a relative offset from now is simplest (`-24h` = last 24 hours, `-7d`, `-90m`; units s, m, h, d) and needs no knowledge of today\'s date. Also accepts RFC3339 (`2024-01-01T00:00:00Z`), Unix epoch seconds and `YYYY-MM-DD` (treated as 00:00:00 UTC).',
   '- `getPoolOHLCV` without a key serves the last 24 hours at `1h` and longer; a free key (DEXPAPRIKA_API_KEY) opens 7 days at `10m` and longer. Limits by plan: https://docs.dexpaprika.com/knowledge-base/rate-limits#ohlcv-limits-by-plan',
-  '- `getPoolTransactions.from` / `.to`: Unix epoch SECONDS only. Window capped to last 7 days.',
+  '- `getPoolTransactions.from` / `.to`, and `created_after` / `created_before` on getNetworkPoolsFilter and filterNetworkTokens: the same shapes as `start`, so a relative offset (`-1h`, `-24h`, `-7d`), Unix epoch seconds, RFC3339 or `YYYY-MM-DD`. Transactions: window capped to last 7 days.',
   '',
   '## Output shape',
   "All tools return both `content[0].text` (JSON string, for older clients) and `structuredContent` (validated against the tool's `outputSchema`, 2025-06-18+). Prefer `structuredContent` to avoid the parse round-trip.",
@@ -694,7 +694,7 @@ function buildCapabilitiesDocument() {
       find_pools_on_network: ['getNetworks', 'getNetworkPools'],
       filter_pools_by_volume: ['getNetworks', 'getNetworkPoolsFilter'],
       find_new_pools: [
-        'getNetworkPoolsFilter with created_after',
+        "getNetworkPoolsFilter with created_after='-24h'",
         'sort_by=created_at sort_dir=desc',
       ],
       token_details_and_pools: ['getTokenDetails', 'getTokenPools'],
@@ -702,7 +702,7 @@ function buildCapabilitiesDocument() {
       top_tokens_on_network: ['getTopTokens'],
       filter_tokens_by_metrics: ['filterNetworkTokens'],
       historical_price_chart: ["getPoolOHLCV with a relative start ('-24h', '-7d') + interval"],
-      recent_swaps: ['getPoolTransactions with from/to UNIX timestamps'],
+      recent_swaps: ["getPoolTransactions with from='-1h' (from/to also take Unix seconds, RFC3339 or YYYY-MM-DD)"],
       cross_network_search: ['search with token name/symbol/address'],
     },
     common_pitfalls: [
@@ -710,7 +710,7 @@ function buildCapabilitiesDocument() {
       'getTokenPools token filtering is network-scoped only: the cross-network /pools/search silently ignores token_address, and an unknown token_address returns empty results, not an error',
       'getTokenPools no longer supports inversed/reorder or paired_token_address/address (no equivalent on /networks/{network}/pools/search); invert prices client-side and filter results[].tokens for pair queries',
       'getTokenMultiPrices is capped at 10 tokens per request',
-      'getPoolTransactions from/to are UNIX timestamps; results always capped to last 7 days',
+      "getPoolTransactions from/to take a relative offset ('-1h'), Unix seconds, RFC3339 or YYYY-MM-DD; results always capped to last 7 days",
       "getPoolOHLCV without a key reaches back 24 hours at 1h and longer: start='-24h' stays inside it, an older start or a finer interval returns 403",
       "Token addresses must match the network (e.g., don't send a Solana address to ethereum queries)",
       'This MCP takes sort_by/sort_dir, but the REST API at api.dexpaprika.com takes order_by/sort. The MCP maps them for you, so use sort_by/sort_dir here. If you call the REST API directly, use order_by/sort: an unrecognized parameter NAME is silently dropped and you get the default volume_usd_24h desc ordering, which looks like a working sort. An unrecognized VALUE for order_by does return 400 listing the valid fields.',
@@ -960,7 +960,7 @@ registerReadTool(
 // ─── getNetworkPoolsFilter ───────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPoolsFilter',
-  'Get pools on one network filtered by numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getNetworkPools when the user gives numeric constraints or a time window. Use for \'pools over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Optional filters (AND-combined): volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after/created_before (Unix timestamps). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get pools on one network filtered by numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getNetworkPools when the user gives numeric constraints or a time window. Use for \'pools over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Optional filters (AND-combined): volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -983,8 +983,8 @@ registerReadTool(
     price_change_percentage_1h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 1h price change, in percent'),
     price_change_percentage_5m_min: z.coerce.number().optional().describe("OPTIONAL: Minimum 5m price change, in percent. The shortest window we carry, so it is the one to reach for on 'what is moving right now'."),
     price_change_percentage_5m_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 5m price change, in percent'),
-    created_after: z.coerce.number().optional().describe('OPTIONAL: Only pools created after this UNIX timestamp'),
-    created_before: z.coerce.number().optional().describe('OPTIONAL: Only pools created before this UNIX timestamp'),
+    created_after: z.coerce.string().optional().describe("OPTIONAL: Only pools created at or after this time: a relative offset such as '-24h' or '-7d', Unix seconds, RFC3339 or YYYY-MM-DD"),
+    created_before: z.coerce.string().optional().describe("OPTIONAL: Only pools created at or before this time, same formats as created_after (e.g. '-1h')"),
     sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted. The REST API calls this parameter order_by."),
     order_by: z.enum(POOL_SORT_FIELDS).optional().describe('OPTIONAL: alias of sort_by; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes order_by, so use this name when calling the REST API directly.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc'). The REST API calls this parameter sort."),
@@ -1047,15 +1047,15 @@ registerReadTool(
 // ─── getPoolTransactions ─────────────────────────────────────────────────────
 registerReadTool(
   'getPoolTransactions',
-  'Get one pool\'s recent individual swap transactions, newest first, returned under \'transactions\' (paginate with page, or a cursor). Read-only and keyless. These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary snapshot (use getPoolDetails). Use for \'recent trades on this pool\', \'who swapped in the last hour\', or \'raw transaction feed\'. Params: network (required); pool_address (required); limit (default 10, max 100); page (default 1, up to 100 pages) or cursor (a transaction id); from (optional Unix seconds, inclusive, capped to the last 7 days); to (optional Unix seconds, exclusive, must be after from).',
+  'Get one pool\'s recent individual swap transactions, newest first, returned under \'transactions\' (paginate with page, or a cursor). Read-only and keyless. These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary snapshot (use getPoolDetails). Use for \'recent trades on this pool\', \'who swapped in the last hour\', or \'raw transaction feed\'. Params: network (required); pool_address (required); limit (default 10, max 100); page (default 1, up to 100 pages) or cursor (a transaction id); from (optional, inclusive: a relative offset such as \'-1h\', Unix seconds, RFC3339 or YYYY-MM-DD; capped to the last 7 days); to (optional, exclusive, same formats, must be after from).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
     page: z.coerce.number().optional().default(1).describe('OPTIONAL: Page number for pagination, up to 100 pages (default: 1, 1-indexed)'),
     limit: z.coerce.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
     cursor: z.string().optional().describe('OPTIONAL: Transaction ID used for cursor-based pagination'),
-    from: z.coerce.number().optional().describe('OPTIONAL: Filter transactions starting from this UNIX timestamp (inclusive). Results always capped to last 7 days.'),
-    to: z.coerce.number().optional().describe("OPTIONAL: Filter transactions up to this UNIX timestamp (exclusive). Must be after 'from'."),
+    from: z.coerce.string().optional().describe("OPTIONAL: Filter transactions starting from this time (inclusive): a relative offset such as '-1h' or '-24h', Unix seconds, RFC3339 or YYYY-MM-DD. Results always capped to last 7 days."),
+    to: z.coerce.string().optional().describe("OPTIONAL: Filter transactions up to this time (exclusive), same formats as from. Must be after 'from'."),
   },
   async (args) => {
     try {
@@ -1064,8 +1064,8 @@ registerReadTool(
       const limit = args.limit ?? 10;
       let endpoint = `/networks/${network}/pools/${pool_address}/transactions?page=${page}&limit=${limit}`;
       if (cursor) endpoint += `&cursor=${encodeURIComponent(cursor)}`;
-      if (from !== undefined) endpoint += `&from=${from}`;
-      if (to !== undefined) endpoint += `&to=${to}`;
+      if (from !== undefined) endpoint += `&from=${encodeURIComponent(from)}`;
+      if (to !== undefined) endpoint += `&to=${encodeURIComponent(to)}`;
       return jsonText(await fetchFromAPI(endpoint));
     } catch (error) {
       return errorText(error);
@@ -1192,7 +1192,7 @@ registerReadTool(
 // ─── filterNetworkTokens ─────────────────────────────────────────────────────
 registerReadTool(
   'filterNetworkTokens',
-  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, price_change_percentage_24h_min/max, created_after/created_before (Unix timestamps). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, price_change_percentage_24h_min/max, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -1206,8 +1206,8 @@ registerReadTool(
     txns_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
     price_change_percentage_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 24h price change, in percent. Negatives are allowed, so -20 finds tokens down at least 20%. This is the only price-change window tokens carry; for 6h, 1h or 5m use getNetworkPoolsFilter.'),
     price_change_percentage_24h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 24h price change, in percent'),
-    created_after: z.coerce.number().optional().describe('OPTIONAL: Only tokens created after this UNIX timestamp'),
-    created_before: z.coerce.number().optional().describe('OPTIONAL: Only tokens created before this UNIX timestamp'),
+    created_after: z.coerce.string().optional().describe("OPTIONAL: Only tokens created at or after this time: a relative offset such as '-24h' or '-7d', Unix seconds, RFC3339 or YYYY-MM-DD"),
+    created_before: z.coerce.string().optional().describe("OPTIONAL: Only tokens created at or before this time, same formats as created_after (e.g. '-1h')"),
     sort_by: z.enum(TOKEN_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical names; short legacy names are still accepted. The REST API calls this parameter order_by."),
     order_by: z.enum(TOKEN_SORT_FIELDS).optional().describe('OPTIONAL: alias of sort_by; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes order_by, so use this name when calling the REST API directly.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc'). The REST API calls this parameter sort."),

@@ -2,6 +2,14 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.6.0] - 2026-09-28
+
+### Changed
+- **Time filters take relative offsets.** Since 2026-09-28 the API accepts the same shapes as OHLCV `start` on `getPoolTransactions` `from` / `to` and on `created_after` / `created_before` in `getNetworkPoolsFilter` and `filterNetworkTokens`: a relative offset from now (`-1h`, `-24h`, `-7d`), Unix seconds, RFC3339 or `YYYY-MM-DD`. These parameters were typed as numbers, so `-24h` was rejected before it reached the API. They are strings now, and a number is still accepted and sent as it is. An agent asking for pools created in the last day can pass `created_after: "-24h"` instead of working out a timestamp.
+- Tool and parameter descriptions, the server instructions and the `getCapabilities` workflows and pitfalls lead with the relative form.
+- `from` and `to` are URL-encoded on the way out, so an RFC3339 value with a `+02:00` offset arrives intact.
+- **The bundled `openapi.yml`** is the current spec from the API, with these parameters as strings.
+
 ## [2.5.2] - 2026-09-25
 
 ### Changed

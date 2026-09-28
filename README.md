@@ -217,7 +217,7 @@ const ethereumPools = await getNetworkPools({
 const filteredPools = await getNetworkPoolsFilter({
   network: "ethereum",
   volume_24h_min: 100000,
-  created_after: 1710806400,
+  created_after: "-7d", // also Unix seconds, RFC3339 or YYYY-MM-DD
   sort_by: "volume_usd_24h",
   limit: 20
 });
