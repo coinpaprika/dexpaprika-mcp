@@ -67,6 +67,9 @@ test('the advertised limits carry a live source, because they change', async () 
   // though the README had already been corrected.
   assert.notEqual(stats.free_tier_credits_per_month, 200_000);
   assert.notEqual(stats.free_key_credits_per_month, 500_000);
+  // Keyless went 30,000 -> 10,000 on 2026-09-23, a week after Pricing v2.0, and
+  // the release in progress still carried 30,000.
+  assert.notEqual(stats.free_tier_credits_per_month, 30_000);
 
   // Registering raises the monthly allowance AND the per-minute rate. The old
   // version of this test pinned free_tier_requests_per_minute to 30 with a
