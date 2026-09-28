@@ -2,6 +2,12 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.6.1] - 2026-09-28
+
+### Fixed
+- **`getCapabilities` reports 36 networks.** `/networks` returns 36 again and the pricing page and docs say 36 chains; the capabilities document still said 35. The token and pool figures are unchanged.
+- **The server reports its real version.** The `initialize` handshake and `getCapabilities` said `2.0.0` whatever the package version was. Both now report the package version.
+
 ## [2.6.0] - 2026-09-28
 
 ### Changed

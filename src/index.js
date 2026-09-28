@@ -28,8 +28,8 @@ const TOKEN_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 
 // here, and only Pro moves to api-pro.dexpaprika.com.
 const API_BASE_URL = resolveBaseUrl();
 
-// Server version — matches the hosted worker.
-const SERVER_VERSION = '2.0.0';
+// Server version, the package version, which the hosted worker matches.
+const SERVER_VERSION = PACKAGE_VERSION;
 
 // Which MCP client we are talking to, learned from the initialize handshake and
 // forwarded in the User-Agent. Stays null until the handshake completes, and the
@@ -667,7 +667,7 @@ function buildCapabilitiesDocument() {
     server: { name: 'DexPaprika MCP', version: SERVER_VERSION },
     tools_count: TOOL_COUNT,
     stats: {
-      networks: 35,
+      networks: 36,
       tokens_approx: 33_000_000,
       pools_approx: 36_000_000,
       free_tier: true,             // a free tier exists; it is metered, not unlimited
