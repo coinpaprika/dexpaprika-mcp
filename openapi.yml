@@ -339,12 +339,18 @@ paths:
             type: integer
         - name: created_after
           in: query
+          description: >-
+            Only results created at or after this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-24h"
           schema:
-            type: integer
+            type: string
         - name: created_before
           in: query
+          description: >-
+            Only results created at or before this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-1h"
           schema:
-            type: integer
+            type: string
         - name: price_usd_min
           in: query
           schema:
@@ -508,12 +514,18 @@ paths:
             type: integer
         - name: created_after
           in: query
+          description: >-
+            Only results created at or after this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-24h"
           schema:
-            type: integer
+            type: string
         - name: created_before
           in: query
+          description: >-
+            Only results created at or before this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-1h"
           schema:
-            type: integer
+            type: string
         - name: price_usd_min
           in: query
           schema:
@@ -689,12 +701,18 @@ paths:
             type: number
         - name: created_after
           in: query
+          description: >-
+            Only results created at or after this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-24h"
           schema:
-            type: integer
+            type: string
         - name: created_before
           in: query
+          description: >-
+            Only results created at or before this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-1h"
           schema:
-            type: integer
+            type: string
         - name: order_by
           in: query
           schema:
@@ -821,12 +839,18 @@ paths:
             type: number
         - name: created_after
           in: query
+          description: >-
+            Only results created at or after this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-24h"
           schema:
-            type: integer
+            type: string
         - name: created_before
           in: query
+          description: >-
+            Only results created at or before this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
+          example: "-1h"
           schema:
-            type: integer
+            type: string
         - name: order_by
           in: query
           schema:
@@ -1333,17 +1357,19 @@ paths:
         - in: query
           name: from
           required: false
+          example: "-1h"
           schema:
-            type: integer
-            format: int64
-          description: Filter transactions starting from this UNIX timestamp.
+            type: string
+          description: >-
+            Only transactions at or after this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
         - in: query
           name: to
           required: false
+          example: "-5m"
           schema:
-            type: integer
-            format: int64
-          description: Filter transactions up to this UNIX timestamp.
+            type: string
+          description: >-
+            Only transactions at or before this time: unix seconds, a relative offset from now such as `-24h` (units s, m, h, d), RFC3339 (`2026-09-24T10:00:00Z`) or a date (`2026-09-24`, 00:00 UTC).
         - in: query
           name: cursor
           description: >-
