@@ -106,9 +106,10 @@ the [rate limits page](https://docs.dexpaprika.com/knowledge-base/rate-limits).
 }
 ```
 
-**The key goes in on its own. There is no `Bearer` prefix**, and no other scheme
-word either. Paste the key exactly as issued. Almost every other API wants the
-opposite, so this is the single most common reason a working key looks broken.
+**The key goes in on its own, as the entire `Authorization` value.** Paste it
+exactly as issued, with nothing in front of it. Almost every other API wants
+something in front of the key, so this is the single most common reason a
+working key looks broken.
 
 Two things worth knowing:
 

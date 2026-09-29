@@ -2,6 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.7.1] - 2026-09-29
+
+### Changed
+- **README and the `getKeyStatus` 401 hint now just say to send the key on its own.** Both used to describe what a prefix in front of the key does on the wire. They now say only what to send: the key alone, as the entire `Authorization` value, with nothing in front of it.
+
 ## [2.7.0] - 2026-09-29
 
 ### Added

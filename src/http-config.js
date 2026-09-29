@@ -67,10 +67,10 @@ export function buildUserAgent({ version, client, runtime } = {}) {
 /**
  * Headers for an outbound API call.
  *
- * **The key is the entire `Authorization` value.** Nothing goes in front of it
- * and no scheme word is ever prepended. That is the whole instruction, and it is
- * the single documented form we publish. It has been re-derived wrongly three
- * times in four months, so the test file pins the format precisely.
+ * **The key is the entire `Authorization` value.** Nothing goes in front of it.
+ * That is the whole instruction, and it is the single documented form we
+ * publish. It has been re-derived wrongly three times in four months, so the
+ * test file pins the format precisely.
  *
  * @returns {Record<string, string>}
  */
@@ -114,8 +114,8 @@ export const DEFAULT_BASE_URL = 'https://api.dexpaprika.com';
  * Resolve the API origin.
  *
  * The host does **not** change when a key is present. Keyless callers and
- * registered free keys are both served from the default origin, and only Pro
- * moves to `api-pro.dexpaprika.com`, so Pro customers set this explicitly.
+ * registered free keys are both served from the default origin, and paid plans
+ * (Dev, Pro, Enterprise) move to `api-pro.dexpaprika.com`, so they set this explicitly.
  * Sending a free key to an api-pro host returns 403 rather than 401, which is
  * why guessing the host from the key would be worse than making it explicit.
  *
