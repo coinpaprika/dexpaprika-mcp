@@ -117,8 +117,8 @@ Two things worth knowing:
   real data, so a typo looks exactly like success. Ask the assistant to run
   `getKeyStatus` after setting one: it reports which plan the API actually sees
   and names the likely cause when the key is not landing.
-- **Pro customers** additionally set `DEXPAPRIKA_API_BASE_URL` to
-  `https://api-pro.dexpaprika.com`. The host does not change automatically,
+- **Dev and Pro customers** additionally set `DEXPAPRIKA_API_BASE_URL` to
+  `https://api-pro.dexpaprika.com`, which is also what `getTokenOHLCV` needs. The host does not change automatically,
   because sending a free key to that host returns 403.
 
 ### Hosted server (no installation)
@@ -233,7 +233,8 @@ const ohlcvData = await getPoolOHLCV({
 });
 
 // Get historical USD price data for a token, volume-weighted across every
-// pool it trades in. Requires a Dev or Pro plan on api-pro.dexpaprika.com;
+// pool it trades in. Requires a Dev or Pro key in DEXPAPRIKA_API_KEY and
+// DEXPAPRIKA_API_BASE_URL=https://api-pro.dexpaprika.com;
 // on a keyless or free key this returns 403, so fall back to getPoolOHLCV
 // on the token's main pool (found with getTokenPools) instead.
 const tokenOhlcvData = await getTokenOHLCV({
