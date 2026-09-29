@@ -25,7 +25,7 @@ const TOKEN_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 
 // Keyless works and stays the default: no key, no signup, nothing to configure.
 // Setting DEXPAPRIKA_API_KEY raises the monthly allowance and opens streaming on
 // any token. The host does NOT change when a key is present: free keys are served
-// here, and only Pro moves to api-pro.dexpaprika.com.
+// here, and Dev, Pro and Enterprise move to api-pro.dexpaprika.com.
 const API_BASE_URL = resolveBaseUrl();
 
 // Server version, the package version, which the hosted worker matches.
@@ -786,7 +786,7 @@ server.registerTool(
         plan_reported_by_api: null,
         key_reaching_api: false,
         diagnosis: configured
-          ? 'The key reached the API and was rejected. The most common cause is a scheme word: the key must be the entire Authorization value, so "ApiKey" or "Token" in front of it fails. ("Bearer" is stripped by api.dexpaprika.com and would not cause this.) Otherwise check for a truncated paste.'
+          ? 'The key reached the API and was rejected. Check that the whole key was pasted, with nothing in front of it.'
           : 'Could not read usage. The server is running keyless, which is the default and needs no key.',
         error: error && typeof error === 'object' && 'error' in error ? error.error : String(error),
       });
