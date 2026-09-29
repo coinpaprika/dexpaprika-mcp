@@ -455,12 +455,13 @@ const SERVER_INSTRUCTIONS = [
   '## Time formats',
   '- `getPoolOHLCV.start` / `.end`: a relative offset from now is simplest (`-24h` = last 24 hours, `-7d`, `-90m`; units s, m, h, d) and needs no knowledge of today\'s date. Also accepts RFC3339 (`2024-01-01T00:00:00Z`), Unix epoch seconds and `YYYY-MM-DD` (treated as 00:00:00 UTC).',
   '- `getPoolOHLCV` without a key serves the last 24 hours at `1h` and longer; a free key (DEXPAPRIKA_API_KEY) opens 7 days at `10m` and longer. Limits by plan: https://docs.dexpaprika.com/knowledge-base/rate-limits#ohlcv-limits-by-plan',
+  '- `getTokenOHLCV.start` / `.end` take the same formats as `getPoolOHLCV`. There is no keyless or free window: the endpoint needs a Dev or Pro plan, and Dev history stops 30 days back. On a 403, fall back to `getPoolOHLCV` on the token\'s main pool (found with `getTokenPools`).',
   '- `getPoolTransactions.from` / `.to`, and `created_after` / `created_before` on getNetworkPoolsFilter and filterNetworkTokens: the same shapes as `start`, so a relative offset (`-1h`, `-24h`, `-7d`), Unix epoch seconds, RFC3339 or `YYYY-MM-DD`. Transactions: window capped to last 7 days.',
   '',
   '## Output shape',
   "All tools return both `content[0].text` (JSON string, for older clients) and `structuredContent` (validated against the tool's `outputSchema`, 2025-06-18+). Prefer `structuredContent` to avoid the parse round-trip.",
   '',
-  'Array-returning tools wrap the array under a named key in structuredContent: `getNetworks` gives `{ networks: [...] }`, `getPoolOHLCV` gives `{ ohlcv: [...] }`, `getTokenMultiPrices` gives `{ prices: [...] }`.',
+  'Array-returning tools wrap the array under a named key in structuredContent: `getNetworks` gives `{ networks: [...] }`, `getPoolOHLCV` and `getTokenOHLCV` give `{ ohlcv: [...] }`, `getTokenMultiPrices` gives `{ prices: [...] }`.',
 ].join('\n');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -638,6 +639,9 @@ const OUTPUT_SCHEMAS = {
   getPoolOHLCV: {
     ohlcv: z.array(OHLCVRow).describe('Open-High-Low-Close-Volume rows ordered by time_open ascending.'),
   },
+  getTokenOHLCV: {
+    ohlcv: z.array(OHLCVRow).describe('USD Open-High-Low-Close-Volume rows ordered by time_open ascending, volume-weighted across every pool the token trades in on the network.'),
+  },
   getPoolTransactions: {
     transactions: z.array(PoolTransaction),
     page_info: PageInfo,
@@ -702,6 +706,7 @@ function buildCapabilitiesDocument() {
       top_tokens_on_network: ['getTopTokens'],
       filter_tokens_by_metrics: ['filterNetworkTokens'],
       historical_price_chart: ["getPoolOHLCV with a relative start ('-24h', '-7d') + interval"],
+      historical_price_chart_for_a_token: ["getTokenOHLCV with a relative start (Dev/Pro/Enterprise only; on a 403 fall back to getPoolOHLCV on the token's main pool from getTokenPools)"],
       recent_swaps: ["getPoolTransactions with from='-1h' (from/to also take Unix seconds, RFC3339 or YYYY-MM-DD)"],
       cross_network_search: ['search with token name/symbol/address'],
     },
@@ -712,6 +717,7 @@ function buildCapabilitiesDocument() {
       'getTokenMultiPrices is capped at 10 tokens per request',
       "getPoolTransactions from/to take a relative offset ('-1h'), Unix seconds, RFC3339 or YYYY-MM-DD; results always capped to last 7 days",
       "getPoolOHLCV without a key reaches back 24 hours at 1h and longer: start='-24h' stays inside it, an older start or a finer interval returns 403",
+      'getTokenOHLCV has no keyless or free tier at all: it needs a Dev or Pro plan, and Dev history stops 30 days back. A 403 here means fall back to getPoolOHLCV on the main pool (find it with getTokenPools), not retry with a shorter window.',
       "Token addresses must match the network (e.g., don't send a Solana address to ethereum queries)",
       'This MCP takes sort_by/sort_dir, but the REST API at api.dexpaprika.com takes order_by/sort. The MCP maps them for you, so use sort_by/sort_dir here. If you call the REST API directly, use order_by/sort: an unrecognized parameter NAME is silently dropped and you get the default volume_usd_24h desc ordering, which looks like a working sort. An unrecognized VALUE for order_by does return 400 listing the valid fields.',
     ],
@@ -1147,6 +1153,35 @@ registerReadTool(
       // normalized sort params from args.
       const endpoint = `/networks/${network}/pools/search${toQueryString(buildPoolSearchParams(args))}`;
       return jsonText(await fetchFromAPI(endpoint));
+    } catch (error) {
+      return errorText(error);
+    }
+  },
+);
+
+// ─── getTokenOHLCV ───────────────────────────────────────────────────────────
+// USD candles for a token, not a pool: the API computes a volume-weighted price
+// across every pool the token trades in on the network, so this is the tool for
+// "price history of this token" rather than "price history of this pair". No
+// inversed param exists here (there is no second token to flip against). Access
+// is Dev/Pro/Enterprise only: keyless and free keys get a 403 naming the plan
+// that opens it, same shape as a getPoolOHLCV plan-gated 403.
+registerReadTool(
+  'getTokenOHLCV',
+  'Get historical USD OHLCV candles for one token over a time range, returned as a time-series array. The price and volume are computed across every pool the token trades in on the network (a volume-weighted price, and volume summed across those pools), not a single pair. Requires a Dev or Pro plan; on a keyless or free key this returns 403 with the API message naming the plan needed, since there is no keyless or free window at all. On that 403, fall back to getPoolOHLCV on the token\'s main pool, found with getTokenPools sorted by volume. Use for \'price history of this token\' or \'USD chart for this token\'; for a single pair\'s candles use getPoolOHLCV, and for the current price use getTokenDetails. Params: network (required); token_address (required); start (required; easiest as a relative offset from now such as \'-24h\', so you need not know today\'s date; also Unix seconds, RFC3339 or yyyy-mm-dd); end (optional, same formats); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 10, max 1000 candles). Dev plan history is limited to the last 30 days. There is no inversed parameter on this endpoint.',
+  {
+    network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
+    token_address: z.string().describe('REQUIRED: Token contract address'),
+    start: z.string().describe("REQUIRED: Start time. A relative offset from now is simplest and needs no knowledge of today's date: '-24h' (last 24 hours), '-7d', '-90m' (units s, m, h, d). Also accepts RFC3339 (e.g. '2024-01-01T00:00:00Z'), Unix epoch seconds and YYYY-MM-DD (treated as 00:00:00 UTC)."),
+    end: z.string().optional().describe("OPTIONAL: End time, same formats as start (e.g. '-1h')"),
+    limit: z.coerce.number().optional().default(10).describe('OPTIONAL: Number of data points to retrieve (default: 10, max: 1000)'),
+    interval: z.enum(['1m', '5m', '10m', '15m', '30m', '1h', '6h', '12h', '24h']).optional().default('24h').describe("OPTIONAL: Interval granularity (default: '24h')"),
+  },
+  async ({ network, token_address, start, end, limit, interval }) => {
+    try {
+      let endpoint = `/networks/${network}/tokens/${token_address}/ohlcv?start=${encodeURIComponent(start)}&limit=${limit}&interval=${interval}`;
+      if (end) endpoint += `&end=${encodeURIComponent(end)}`;
+      return jsonText(await fetchFromAPI(endpoint), 'ohlcv');
     } catch (error) {
       return errorText(error);
     }

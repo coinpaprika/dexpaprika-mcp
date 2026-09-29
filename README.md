@@ -117,8 +117,8 @@ Two things worth knowing:
   real data, so a typo looks exactly like success. Ask the assistant to run
   `getKeyStatus` after setting one: it reports which plan the API actually sees
   and names the likely cause when the key is not landing.
-- **Pro customers** additionally set `DEXPAPRIKA_API_BASE_URL` to
-  `https://api-pro.dexpaprika.com`. The host does not change automatically,
+- **Dev and Pro customers** additionally set `DEXPAPRIKA_API_BASE_URL` to
+  `https://api-pro.dexpaprika.com`, which is also what `getTokenOHLCV` needs. The host does not change automatically,
   because sending a free key to that host returns 403.
 
 ### Hosted server (no installation)
@@ -144,9 +144,9 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 }
 ```
 
-## Available Tools (17)
+## Available Tools (18)
 
-This self-host build registers 17 read tools: 16 market-data tools plus `getKeyStatus`. The hosted server at `mcp.dexpaprika.com` registers its own set including `submitFeedback`. Verify either with a live `tools/list`.
+This self-host build registers 18 read tools: 17 market-data tools plus `getKeyStatus`. The hosted server at `mcp.dexpaprika.com` registers its own set including `submitFeedback`. Verify either with a live `tools/list`.
 
 ### Discovery
 
@@ -181,6 +181,7 @@ This self-host build registers 17 read tools: 16 market-data tools plus `getKeyS
 |------|-------------|---------------------|
 | `getTokenDetails` | Detailed token information | `network`, `token_address` |
 | `getTokenPools` | Liquidity pools containing a token (network-scoped filter, `results` + cursor pagination) | `network`, `token_address` |
+| `getTokenOHLCV` | Historical USD OHLCV candles for a token, volume-weighted across every pool it trades in. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 | `network`, `token_address`, `start` |
 | `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
 | `getTopTokens` | Top tokens on a network ranked by volume, liquidity, FDV, or 24h price change | `network` |
 | `filterNetworkTokens` | Filter tokens by volume, liquidity, FDV, transactions, and creation time | `network` |
@@ -222,11 +223,24 @@ const filteredPools = await getNetworkPoolsFilter({
   limit: 20
 });
 
-// Get historical price data:
+// Get historical price data for a pool:
 const ohlcvData = await getPoolOHLCV({
   network: "ethereum",
   pool_address: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
   start: "-24h",     // last 24 hours; works without a key
+  interval: "1h",
+  limit: 24
+});
+
+// Get historical USD price data for a token, volume-weighted across every
+// pool it trades in. Requires a Dev or Pro key in DEXPAPRIKA_API_KEY and
+// DEXPAPRIKA_API_BASE_URL=https://api-pro.dexpaprika.com;
+// on a keyless or free key this returns 403, so fall back to getPoolOHLCV
+// on the token's main pool (found with getTokenPools) instead.
+const tokenOhlcvData = await getTokenOHLCV({
+  network: "ethereum",
+  token_address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+  start: "-24h",
   interval: "1h",
   limit: 24
 });

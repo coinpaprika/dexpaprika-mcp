@@ -176,6 +176,46 @@ test('a 403 hands the agent the API message instead of a bare status', async () 
   } finally { upstream.close(); }
 });
 
+test('getTokenOHLCV calls the token ohlcv path with no inversed param', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('[]');
+  });
+  try {
+    await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getTokenOHLCV',
+      args: { rationale: RATIONALE, network: 'ethereum', token_address: '0xtoken', start: '-24h', interval: '1h', limit: 24 },
+    });
+    assert.equal(upstream.seen.length, 1, 'expected exactly one upstream request');
+    const { pathname, searchParams } = new URL(upstream.seen[0].url, 'http://upstream.test');
+    assert.equal(pathname, '/networks/ethereum/tokens/0xtoken/ohlcv');
+    assert.equal(searchParams.get('start'), '-24h');
+    assert.equal(searchParams.get('interval'), '1h');
+    assert.equal(searchParams.get('limit'), '24');
+    assert.equal(searchParams.has('inversed'), false, 'getTokenOHLCV must never send inversed, unlike getPoolOHLCV');
+  } finally { upstream.close(); }
+});
+
+test('getTokenOHLCV on a keyless/free caller returns the 403 naming the required plan', async () => {
+  const message = 'this endpoint requires a Dev or Pro plan';
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ message }));
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getTokenOHLCV',
+      args: { rationale: RATIONALE, network: 'ethereum', token_address: '0xtoken', start: '-24h' },
+    });
+    const { error } = payload(response);
+    assert.equal(error.code, 'DP403_ERROR');
+    assert.equal(error.message, message);
+    assert.equal(error.retryable, false);
+  } finally { upstream.close(); }
+});
+
 test('a 400 carries the API message naming the bad parameter', async () => {
   const upstream = await recordingUpstream((req, res) => {
     res.writeHead(400, { 'content-type': 'application/json' });
