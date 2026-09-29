@@ -2,6 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.7.0] - 2026-09-29
+
+### Added
+- **`getTokenOHLCV`.** Historical USD OHLCV candles for a token, computed as a volume-weighted price across every pool the token trades in on the network (volume is summed across those pools too), so it answers "price history of this token" rather than one pair. Same parameter shapes as `getPoolOHLCV` (`network`, `token_address`, `start`, `end`, `interval`, `limit`), but there is no `inversed` parameter: there is no second token to flip against. The endpoint requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 with the API's own message naming the plan needed, and Dev history stops 30 days back. On that 403, fall back to `getPoolOHLCV` on the token's main pool, found with `getTokenPools`. `getCapabilities` workflows and common_pitfalls, and the server instructions, carry the same guidance.
+
 ## [2.6.1] - 2026-09-28
 
 ### Fixed
