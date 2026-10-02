@@ -139,3 +139,33 @@ export function resolveBaseUrl(env = process.env) {
 
   return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
 }
+
+/** Origin for Dev, Pro and Enterprise keys. */
+export const PAID_BASE_URL = 'https://api-pro.dexpaprika.com';
+
+/**
+ * Read a `403` body that says the endpoint needs a paid plan.
+ *
+ * Since 2026-09-30 pool transactions answer only Dev, Pro and Enterprise keys,
+ * and token OHLCV has done so since it launched. The API marks that refusal
+ * with `"error": "plan_required"` and names the lowest plan in `required_tier`.
+ * It does not name the paid host, which is the part an agent cannot guess, so
+ * the caller adds it.
+ *
+ * @returns {{ requiredTier: string|null, message: string|null } | null}
+ *   null when the body is missing, not JSON, or a different kind of 403
+ */
+export function parsePlanRequired(body) {
+  if (typeof body !== 'string' || body === '') return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || parsed.error !== 'plan_required') return null;
+  return {
+    requiredTier: typeof parsed.required_tier === 'string' && parsed.required_tier ? parsed.required_tier : null,
+    message: typeof parsed.message === 'string' && parsed.message ? parsed.message : null,
+  };
+}

@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { createRequire } from 'module';
 import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
-import { buildHeaders, parseRetryAfterSeconds, resolveApiKey, resolveBaseUrl } from './http-config.js';
+import { buildHeaders, PAID_BASE_URL, parsePlanRequired, parseRetryAfterSeconds, resolveApiKey, resolveBaseUrl } from './http-config.js';
 
 const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
 
@@ -148,6 +148,7 @@ const ErrorCodes = {
   DP404_NOT_FOUND: 'DP404_NOT_FOUND',
   DP429_RATE_LIMIT: 'DP429_RATE_LIMIT',
   DP402_QUOTA_EXHAUSTED: 'DP402_QUOTA_EXHAUSTED',
+  DP403_PLAN_REQUIRED: 'DP403_PLAN_REQUIRED',
 };
 
 function buildErrorResponse(code, message, retryable, suggestion, correctedExample, metadata) {
@@ -298,6 +299,36 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
       'Check that all required parameters are provided with correct formats',
       undefined,
       { endpoint, status },
+    );
+  }
+
+  // A paid-only endpoint (pool transactions, token OHLCV) refused a keyless or
+  // free caller. The body names the plan but not the host, and the host is the
+  // one thing an agent cannot work out: a Dev key sent to the default origin
+  // keeps failing. So say both, and say that retrying changes nothing.
+  const planRequired = status === 403 ? parsePlanRequired(body) : null;
+  if (planRequired) {
+    const tier = planRequired.requiredTier
+      ? planRequired.requiredTier.charAt(0).toUpperCase() + planRequired.requiredTier.slice(1)
+      : 'Dev';
+    return buildErrorResponse(
+      ErrorCodes.DP403_PLAN_REQUIRED,
+      planRequired.message ?? 'This endpoint requires a Dev or Pro plan',
+      false,
+      `Not retryable, and the refusal costs no credits. Tell the user this needs a ${tier} plan or higher. ` +
+        `With a Dev, Pro or Enterprise key, set DEXPAPRIKA_API_KEY to the key and DEXPAPRIKA_API_BASE_URL=${PAID_BASE_URL}, then restart this server. ` +
+        'Until then, getPoolDetails gives a pool\'s 24h transaction counts and volume, and getPoolOHLCV gives candles.',
+      undefined,
+      {
+        endpoint,
+        status,
+        required_tier: planRequired.requiredTier,
+        base_url: API_BASE_URL,
+        paid_base_url: PAID_BASE_URL,
+        console_url: 'https://console.dexpaprika.com',
+        docs_url: 'https://docs.dexpaprika.com/api-pro/upgrading',
+        pricing_url: 'https://dexpaprika.com/api/pricing',
+      },
     );
   }
 
@@ -457,6 +488,7 @@ const SERVER_INSTRUCTIONS = [
   '- `getPoolOHLCV` without a key serves the last 24 hours at `1h` and longer; a free key (DEXPAPRIKA_API_KEY) opens 7 days at `10m` and longer. Limits by plan: https://docs.dexpaprika.com/knowledge-base/rate-limits#ohlcv-limits-by-plan',
   '- `getTokenOHLCV.start` / `.end` take the same formats as `getPoolOHLCV`. There is no keyless or free window: the endpoint needs a Dev or Pro plan, and Dev history stops 30 days back. On a 403, fall back to `getPoolOHLCV` on the token\'s main pool (found with `getTokenPools`).',
   '- `getPoolTransactions.from` / `.to`, and `created_after` / `created_before` on getNetworkPoolsFilter and filterNetworkTokens: the same shapes as `start`, so a relative offset (`-1h`, `-24h`, `-7d`), Unix epoch seconds, RFC3339 or `YYYY-MM-DD`. Transactions: window capped to last 7 days.',
+  '- `getPoolTransactions` and `getTokenOHLCV` need a Dev, Pro or Enterprise key with `DEXPAPRIKA_API_BASE_URL=https://api-pro.dexpaprika.com`. Keyless and free keys get `DP403_PLAN_REQUIRED`; tell the user rather than retrying.',
   '',
   '## Output shape',
   "All tools return both `content[0].text` (JSON string, for older clients) and `structuredContent` (validated against the tool's `outputSchema`, 2025-06-18+). Prefer `structuredContent` to avoid the parse round-trip.",
@@ -707,7 +739,7 @@ function buildCapabilitiesDocument() {
       filter_tokens_by_metrics: ['filterNetworkTokens'],
       historical_price_chart: ["getPoolOHLCV with a relative start ('-24h', '-7d') + interval"],
       historical_price_chart_for_a_token: ["getTokenOHLCV with a relative start (Dev/Pro/Enterprise only; on a 403 fall back to getPoolOHLCV on the token's main pool from getTokenPools)"],
-      recent_swaps: ["getPoolTransactions with from='-1h' (from/to also take Unix seconds, RFC3339 or YYYY-MM-DD)"],
+      recent_swaps: ["getPoolTransactions with from='-1h' (Dev/Pro/Enterprise only, on api-pro; on a 403 use getPoolDetails for 24h counts and volume)"],
       cross_network_search: ['search with token name/symbol/address'],
     },
     common_pitfalls: [
@@ -715,6 +747,7 @@ function buildCapabilitiesDocument() {
       'getTokenPools token filtering is network-scoped only: the cross-network /pools/search silently ignores token_address, and an unknown token_address returns empty results, not an error',
       'getTokenPools no longer supports inversed/reorder or paired_token_address/address (no equivalent on /networks/{network}/pools/search); invert prices client-side and filter results[].tokens for pair queries',
       'getTokenMultiPrices is capped at 10 tokens per request',
+      "getPoolTransactions needs a Dev, Pro or Enterprise key on api-pro (DEXPAPRIKA_API_BASE_URL=https://api-pro.dexpaprika.com) since 2026-09-30; keyless and free keys get 403, which retrying will not change",
       "getPoolTransactions from/to take a relative offset ('-1h'), Unix seconds, RFC3339 or YYYY-MM-DD; results always capped to last 7 days",
       "getPoolOHLCV without a key reaches back 24 hours at 1h and longer: start='-24h' stays inside it, an older start or a finer interval returns 403",
       'getTokenOHLCV has no keyless or free tier at all: it needs a Dev or Pro plan, and Dev history stops 30 days back. A 403 here means fall back to getPoolOHLCV on the main pool (find it with getTokenPools), not retry with a shorter window.',
@@ -1053,7 +1086,7 @@ registerReadTool(
 // ─── getPoolTransactions ─────────────────────────────────────────────────────
 registerReadTool(
   'getPoolTransactions',
-  'Get one pool\'s recent individual swap transactions, newest first, returned under \'transactions\' (paginate with page, or a cursor). Read-only and keyless. These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary snapshot (use getPoolDetails). Use for \'recent trades on this pool\', \'who swapped in the last hour\', or \'raw transaction feed\'. Params: network (required); pool_address (required); limit (default 10, max 100); page (default 1, up to 100 pages) or cursor (a transaction id); from (optional, inclusive: a relative offset such as \'-1h\', Unix seconds, RFC3339 or YYYY-MM-DD; capped to the last 7 days); to (optional, exclusive, same formats, must be after from).',
+  'Get one pool\'s recent individual swap transactions, newest first, returned under \'transactions\' (paginate with page, or a cursor). Read-only. Requires a Dev, Pro or Enterprise key since 30 September 2026: set DEXPAPRIKA_API_KEY to it and DEXPAPRIKA_API_BASE_URL to https://api-pro.dexpaprika.com. Keyless and free keys get 403 (DP403_PLAN_REQUIRED); getPoolDetails still gives the pool\'s 24h transaction counts and volume. These are per-trade records, not aggregated candles (use getPoolOHLCV) or a summary snapshot (use getPoolDetails). Use for \'recent trades on this pool\', \'who swapped in the last hour\', or \'raw transaction feed\'. Params: network (required); pool_address (required); limit (default 10, max 100); page (default 1, up to 100 pages) or cursor (a transaction id); from (optional, inclusive: a relative offset such as \'-1h\', Unix seconds, RFC3339 or YYYY-MM-DD; capped to the last 7 days); to (optional, exclusive, same formats, must be after from).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
@@ -1168,7 +1201,7 @@ registerReadTool(
 // that opens it, same shape as a getPoolOHLCV plan-gated 403.
 registerReadTool(
   'getTokenOHLCV',
-  'Get historical USD OHLCV candles for one token over a time range, returned as a time-series array. The price and volume are computed across every pool the token trades in on the network (a volume-weighted price, and volume summed across those pools), not a single pair. Requires a Dev or Pro plan; on a keyless or free key this returns 403 with the API message naming the plan needed, since there is no keyless or free window at all. On that 403, fall back to getPoolOHLCV on the token\'s main pool, found with getTokenPools sorted by volume. Use for \'price history of this token\' or \'USD chart for this token\'; for a single pair\'s candles use getPoolOHLCV, and for the current price use getTokenDetails. Params: network (required); token_address (required); start (required; easiest as a relative offset from now such as \'-24h\', so you need not know today\'s date; also Unix seconds, RFC3339 or yyyy-mm-dd); end (optional, same formats); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 10, max 1000 candles). Dev plan history is limited to the last 30 days. There is no inversed parameter on this endpoint.',
+  'Get historical USD OHLCV candles for one token over a time range, returned as a time-series array. The price and volume are computed across every pool the token trades in on the network (a volume-weighted price, and volume summed across those pools), not a single pair. Requires a Dev or Pro plan: set DEXPAPRIKA_API_KEY to that key and DEXPAPRIKA_API_BASE_URL to https://api-pro.dexpaprika.com. On a keyless or free key this returns 403 (DP403_PLAN_REQUIRED), since there is no keyless or free window at all. On that 403, fall back to getPoolOHLCV on the token\'s main pool, found with getTokenPools sorted by volume. Use for \'price history of this token\' or \'USD chart for this token\'; for a single pair\'s candles use getPoolOHLCV, and for the current price use getTokenDetails. Params: network (required); token_address (required); start (required; easiest as a relative offset from now such as \'-24h\', so you need not know today\'s date; also Unix seconds, RFC3339 or yyyy-mm-dd); end (optional, same formats); interval one of \'1m\',\'5m\',\'10m\',\'15m\',\'30m\',\'1h\',\'6h\',\'12h\',\'24h\' (default \'24h\'); limit (default 10, max 1000 candles). Dev plan history is limited to the last 30 days. There is no inversed parameter on this endpoint.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     token_address: z.string().describe('REQUIRED: Token contract address'),
