@@ -2,6 +2,12 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.7.2] - 2026-10-02
+
+### Fixed
+- **`getPoolTransactions` no longer says it is keyless.** Since 2026-09-30 pool transactions answer only Dev, Pro and Enterprise keys, on `api-pro.dexpaprika.com`. The tool description, the server instructions and the `getCapabilities` workflows and pitfalls now say so, and name the two settings that make it work: `DEXPAPRIKA_API_KEY` set to the paid key and `DEXPAPRIKA_API_BASE_URL=https://api-pro.dexpaprika.com`. `getTokenOHLCV` names them too.
+- **A paid-plan refusal is now its own error, `DP403_PLAN_REQUIRED`.** The API's `403` names the plan but not the host, so an agent whose user had just bought Dev could keep calling the default origin and keep failing. The error now says it is not retryable, tells the agent to tell the user, names both settings, points at `getPoolDetails` and `getPoolOHLCV` in the meantime, and carries `required_tier`, `paid_base_url`, `console_url`, `docs_url` and `pricing_url` as fields. Other 403s (an OHLCV window, a wrong host) keep their own advice.
+
 ## [2.7.1] - 2026-09-29
 
 ### Changed
