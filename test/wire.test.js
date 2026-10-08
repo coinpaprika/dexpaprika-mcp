@@ -287,3 +287,19 @@ test('transactions from and to accept a relative offset and an RFC3339 time with
     assert.equal(q.get('to'), '2026-09-28T12:00:00+02:00');
   } finally { upstream.close(); }
 });
+
+test('getNetworkPools accepts the 48h sort and sends it as order_by', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"results":[],"has_next_page":false}');
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getNetworkPools',
+      args: { rationale: RATIONALE, network: 'ethereum', sort_by: 'price_change_percentage_48h' },
+    });
+    assert.equal(response.result?.isError, undefined, `tool rejected the sort: ${JSON.stringify(response)}`);
+    assert.equal(sentParams(upstream).get('order_by'), 'price_change_percentage_48h');
+  } finally { upstream.close(); }
+});

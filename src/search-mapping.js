@@ -57,8 +57,9 @@
 const POOL_SORT_CANONICAL = new Set([
   'volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd',
   'txns_24h', 'created_at', 'price_usd',
-  'price_change_percentage_24h', 'price_change_percentage_6h',
-  'price_change_percentage_1h', 'price_change_percentage_5m',
+  'price_change_percentage_24h', 'price_change_percentage_48h',
+  'price_change_percentage_6h', 'price_change_percentage_1h',
+  'price_change_percentage_5m',
 ]);
 
 const POOL_SORT_LEGACY = {

@@ -10,7 +10,7 @@ const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').versio
 // Sort-field values accepted by the pool/token tools. Canonical *_24h names are
 // what /pools/search and /tokens/search use; the trailing short names are legacy
 // aliases kept for back-compat and normalized in search-mapping.js.
-const POOL_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'price_usd', 'price_change_percentage_24h', 'price_change_percentage_6h', 'price_change_percentage_1h', 'price_change_percentage_5m', 'volume_usd', 'transactions', 'last_price_change_usd_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'liquidity'];
+const POOL_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'created_at', 'price_usd', 'price_change_percentage_24h', 'price_change_percentage_48h', 'price_change_percentage_6h', 'price_change_percentage_1h', 'price_change_percentage_5m', 'volume_usd', 'transactions', 'last_price_change_usd_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'liquidity'];
 const TOKEN_SORT_FIELDS = ['volume_usd_24h', 'volume_usd_7d', 'volume_usd_30d', 'liquidity_usd', 'txns_24h', 'fdv_usd', 'created_at', 'price_change_percentage_24h', 'volume_24h', 'volume_7d', 'volume_30d', 'txns', 'price_change', 'fdv', 'price_usd'];
 
 // ─────────────────────────────────────────────────────────────────────────────
