@@ -2,10 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
-## [2.7.3] - 2026-10-08
+## [2.7.3] - 2026-10-12
 
 ### Added
 - **Pool tools sort by the 48h price change.** `getNetworkPools`, `getDexPools`, `getNetworkPoolsFilter` and `search` pool results now accept `sort_by=price_change_percentage_48h`, which the REST API added to `/pools/search` and `/networks/{network}/pools/search`. Before this, the value failed the tool schema. Token tools stay on the 24h window, as `tokens/search` does.
+- **`getNetworkPoolsFilter` filters on the 48h price change.** `price_change_percentage_48h_min` and `price_change_percentage_48h_max` bound the 48h move in percent, like the 24h, 6h, 1h and 5m bounds.
 
 ## [2.7.2] - 2026-10-02
 

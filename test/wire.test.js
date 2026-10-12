@@ -303,3 +303,21 @@ test('getNetworkPools accepts the 48h sort and sends it as order_by', async () =
     assert.equal(sentParams(upstream).get('order_by'), 'price_change_percentage_48h');
   } finally { upstream.close(); }
 });
+
+test('getNetworkPoolsFilter sends the 48h price-change bounds', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"results":[],"has_next_page":false}');
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getNetworkPoolsFilter',
+      args: { rationale: RATIONALE, network: 'ethereum', price_change_percentage_48h_min: 500, price_change_percentage_48h_max: -50 },
+    });
+    assert.equal(response.result?.isError, undefined, `tool rejected the bounds: ${JSON.stringify(response)}`);
+    const q = sentParams(upstream);
+    assert.equal(q.get('price_change_percentage_48h_min'), '500');
+    assert.equal(q.get('price_change_percentage_48h_max'), '-50');
+  } finally { upstream.close(); }
+});

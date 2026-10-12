@@ -1011,11 +1011,13 @@ registerReadTool(
     liquidity_usd_min: z.coerce.number().optional().describe('OPTIONAL: Minimum pool liquidity in USD'),
     liquidity_usd_max: z.coerce.number().optional().describe('OPTIONAL: Maximum pool liquidity in USD'),
     txns_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
-    // All four price-change windows filter. Verified live against a
+    // All five price-change windows filter. Verified live against a
     // garbage-named control, so a silently-dropped parameter could not pass for
     // a working one.
     price_change_percentage_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 24h price change, in percent. Negatives are allowed, so -20 finds pools down at least 20%.'),
     price_change_percentage_24h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 24h price change, in percent'),
+    price_change_percentage_48h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 48h price change, in percent'),
+    price_change_percentage_48h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 48h price change, in percent'),
     price_change_percentage_6h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 6h price change, in percent'),
     price_change_percentage_6h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 6h price change, in percent'),
     price_change_percentage_1h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 1h price change, in percent'),
