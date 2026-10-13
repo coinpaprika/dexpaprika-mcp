@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { createRequire } from 'module';
 import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
+import { indicatorInputShape, INDICATOR_PARAM_HELP, INDICATOR_READING_HELP, poolIndicatorPath, tokenIndicatorPath } from './indicators.js';
 import { buildHeaders, PAID_BASE_URL, parsePlanRequired, parseRetryAfterSeconds, resolveApiKey, resolveBaseUrl } from './http-config.js';
 
 const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
@@ -307,6 +308,30 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
   // one thing an agent cannot work out: a Dev key sent to the default origin
   // keeps failing. So say both, and say that retrying changes nothing.
   const planRequired = status === 403 ? parsePlanRequired(body) : null;
+  // A keyless caller outside the OHLCV or indicator window (too far back, or
+  // an interval under 1h) gets the same plan_required envelope, but with
+  // required_tier "free". A free key lifts it and stays on the default host,
+  // so the paid-host advice below would send the user the wrong way.
+  if (planRequired && planRequired.requiredTier === 'free') {
+    return buildErrorResponse(
+      ErrorCodes.DP403_PLAN_REQUIRED,
+      planRequired.message ?? 'This request needs a free API key',
+      false,
+      'Retrying unchanged returns the same 403. Either ask for less (a shorter window or a coarser interval, as the message says), ' +
+        'or tell the user a free key lifts this: get one at https://console.dexpaprika.com (no card), set DEXPAPRIKA_API_KEY to it ' +
+        'and restart this server. A free key stays on the default host; do not change DEXPAPRIKA_API_BASE_URL.',
+      undefined,
+      {
+        endpoint,
+        status,
+        required_tier: planRequired.requiredTier,
+        base_url: API_BASE_URL,
+        console_url: 'https://console.dexpaprika.com',
+        docs_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
+        pricing_url: 'https://dexpaprika.com/api/pricing',
+      },
+    );
+  }
   if (planRequired) {
     const tier = planRequired.requiredTier
       ? planRequired.requiredTier.charAt(0).toUpperCase() + planRequired.requiredTier.slice(1)
@@ -317,7 +342,7 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
       false,
       `Not retryable, and the refusal costs no credits. Tell the user this needs a ${tier} plan or higher. ` +
         `With a Dev, Pro or Enterprise key, set DEXPAPRIKA_API_KEY to the key and DEXPAPRIKA_API_BASE_URL=${PAID_BASE_URL}, then restart this server. ` +
-        'Until then, getPoolDetails gives a pool\'s 24h transaction counts and volume, and getPoolOHLCV gives candles.',
+        'Until then, getPoolDetails gives a pool\'s 24h transaction counts and volume, getPoolOHLCV gives candles and getPoolIndicator gives indicators.',
       undefined,
       {
         endpoint,
@@ -483,12 +508,16 @@ const SERVER_INSTRUCTIONS = [
   '',
   'Pagination is 1-indexed; the server accepts `page=0` as a backward-compat alias for `page=1`.',
   '',
+  '## Technical indicators',
+  '`getPoolIndicator` returns RSI, EMA, MACD, Bollinger Bands or VWAP for a pool, computed server-side from its OHLCV candles, so there is no need to fetch candles and compute them. Pick one with `indicator` and always pass `interval`. Send only the parameters of that indicator (`period`; `fast_period`/`slow_period`/`signal_period` for macd; `std_dev` for bbands): any other is refused with 400. History depth and interval follow the same plan limits as `getPoolOHLCV`. `getTokenIndicator` computes the same on a token\'s USD candles across all its pools and needs a Dev, Pro or Enterprise key.',
+  '',
   '## Time formats',
   '- `getPoolOHLCV.start` / `.end`: a relative offset from now is simplest (`-24h` = last 24 hours, `-7d`, `-90m`; units s, m, h, d) and needs no knowledge of today\'s date. Also accepts RFC3339 (`2024-01-01T00:00:00Z`), Unix epoch seconds and `YYYY-MM-DD` (treated as 00:00:00 UTC).',
   '- `getPoolOHLCV` without a key serves the last 24 hours at `1h` and longer; a free key (DEXPAPRIKA_API_KEY) opens 7 days at `10m` and longer. Limits by plan: https://docs.dexpaprika.com/knowledge-base/rate-limits#ohlcv-limits-by-plan',
-  '- `getTokenOHLCV.start` / `.end` take the same formats as `getPoolOHLCV`. There is no keyless or free window: the endpoint needs a Dev or Pro plan, and Dev history stops 30 days back. On a 403, fall back to `getPoolOHLCV` on the token\'s main pool (found with `getTokenPools`).',
+  '- `getTokenOHLCV`, `getPoolIndicator` and `getTokenIndicator` take `start` / `end` in the same formats as `getPoolOHLCV`. There is no keyless or free window: the endpoint needs a Dev or Pro plan, and Dev history stops 30 days back. On a 403, fall back to `getPoolOHLCV` on the token\'s main pool (found with `getTokenPools`).',
   '- `getPoolTransactions.from` / `.to`, and `created_after` / `created_before` on getNetworkPoolsFilter and filterNetworkTokens: the same shapes as `start`, so a relative offset (`-1h`, `-24h`, `-7d`), Unix epoch seconds, RFC3339 or `YYYY-MM-DD`. Transactions: window capped to last 7 days.',
   '- `getPoolTransactions` and `getTokenOHLCV` need a Dev, Pro or Enterprise key with `DEXPAPRIKA_API_BASE_URL=https://api-pro.dexpaprika.com`. Keyless and free keys get `DP403_PLAN_REQUIRED`; tell the user rather than retrying.',
+  '- `getTokenIndicator` needs the same Dev, Pro or Enterprise key and base URL. Without it, use `getPoolIndicator` on the token\'s main pool (found with `getTokenPools`).',
   '',
   '## Output shape',
   "All tools return both `content[0].text` (JSON string, for older clients) and `structuredContent` (validated against the tool's `outputSchema`, 2025-06-18+). Prefer `structuredContent` to avoid the parse round-trip.",
@@ -580,6 +609,31 @@ const PriceEntry = z.object({
 // Per-tool output schema RAW SHAPES (Record<string, ZodTypeAny>). Wrapped in
 // z.object(shape).passthrough() at registration so the outer level also allows
 // extra fields (additionalProperties:true), matching the worker.
+// Technical indicators: one shape for pools and tokens. Each data point has its
+// timestamp plus the fields of the indicator asked for.
+const IndicatorPoint = z.object({
+  timestamp: z.string().describe('Open time of the candle, RFC3339.'),
+  value: z.number().optional().describe('rsi, ema and vwap.'),
+  macd: z.number().optional(),
+  signal: z.number().optional(),
+  histogram: z.number().optional().describe('macd minus signal; a sign change is a crossover.'),
+  upper: z.number().optional().describe('bbands upper band.'),
+  middle: z.number().optional().describe('bbands middle band (the moving average).'),
+  lower: z.number().optional().describe('bbands lower band.'),
+}).passthrough();
+
+const INDICATOR_RESPONSE = {
+  network: z.string().optional(),
+  pool_address: z.string().optional().describe('Set on pool indicators.'),
+  token_address: z.string().optional().describe('Set on token indicators.'),
+  indicator: z.string().optional(),
+  interval: z.string().optional(),
+  parameters: z.record(z.string(), z.unknown()).optional().describe('Parameters used, defaults included.'),
+  data: z.array(IndicatorPoint).describe('One value per completed candle, oldest first.'),
+  has_next_page: z.boolean().optional(),
+  next_cursor: z.string().optional().describe('Pass as cursor for the next page; empty on the last page.'),
+};
+
 const OUTPUT_SCHEMAS = {
   getNetworks: {
     networks: z.array(NetworkSummary).describe('All supported blockchain networks with current 24h volume + indexing stats.'),
@@ -674,6 +728,8 @@ const OUTPUT_SCHEMAS = {
   getTokenOHLCV: {
     ohlcv: z.array(OHLCVRow).describe('USD Open-High-Low-Close-Volume rows ordered by time_open ascending, volume-weighted across every pool the token trades in on the network.'),
   },
+  getPoolIndicator: INDICATOR_RESPONSE,
+  getTokenIndicator: INDICATOR_RESPONSE,
   getPoolTransactions: {
     transactions: z.array(PoolTransaction),
     page_info: PageInfo,
@@ -739,6 +795,11 @@ function buildCapabilitiesDocument() {
       filter_tokens_by_metrics: ['filterNetworkTokens'],
       historical_price_chart: ["getPoolOHLCV with a relative start ('-24h', '-7d') + interval"],
       historical_price_chart_for_a_token: ["getTokenOHLCV with a relative start (Dev/Pro/Enterprise only; on a 403 fall back to getPoolOHLCV on the token's main pool from getTokenPools)"],
+      technical_indicators: ["getPoolIndicator with indicator='rsi'|'ema'|'macd'|'bbands'|'vwap' and an interval (computed server-side, no need to fetch candles)"],
+      token_technical_indicators: [
+        "getTokenIndicator for one USD series across all of a token's pools (Dev/Pro/Enterprise only, on api-pro)",
+        'without one: getTokenPools sorted by volume, then getPoolIndicator on the top pool',
+      ],
       recent_swaps: ["getPoolTransactions with from='-1h' (Dev/Pro/Enterprise only, on api-pro; on a 403 use getPoolDetails for 24h counts and volume)"],
       cross_network_search: ['search with token name/symbol/address'],
     },
@@ -751,6 +812,8 @@ function buildCapabilitiesDocument() {
       "getPoolTransactions from/to take a relative offset ('-1h'), Unix seconds, RFC3339 or YYYY-MM-DD; results always capped to last 7 days",
       "getPoolOHLCV without a key reaches back 24 hours at 1h and longer: start='-24h' stays inside it, an older start or a finer interval returns 403",
       'getTokenOHLCV has no keyless or free tier at all: it needs a Dev or Pro plan, and Dev history stops 30 days back. A 403 here means fall back to getPoolOHLCV on the main pool (find it with getTokenPools), not retry with a shorter window.',
+      'The indicator tools take only the parameters of the indicator asked for: period for rsi, ema, bbands and vwap; fast_period, slow_period and signal_period for macd; std_dev for bbands. Any other parameter is refused with 400. Pass interval every time, and start ten or more periods before the first value you rely on, because RSI, EMA and MACD are smoothed',
+      "getTokenIndicator has no keyless or free tier: it needs a Dev, Pro or Enterprise key on api-pro. On a 403 use getPoolIndicator on the token's main pool (find it with getTokenPools)",
       "Token addresses must match the network (e.g., don't send a Solana address to ethereum queries)",
       'This MCP takes sort_by/sort_dir, but the REST API at api.dexpaprika.com takes order_by/sort. The MCP maps them for you, so use sort_by/sort_dir here. If you call the REST API directly, use order_by/sort: an unrecognized parameter NAME is silently dropped and you get the default volume_usd_24h desc ordering, which looks like a working sort. An unrecognized VALUE for order_by does return 400 listing the valid fields.',
     ],
@@ -1085,6 +1148,27 @@ registerReadTool(
   },
 );
 
+// ─── getPoolIndicator ────────────────────────────────────────────────────────
+// RSI, EMA, MACD, Bollinger Bands or VWAP for one pool, computed upstream from
+// the pool's completed candles. Same plan limits on history and interval as
+// getPoolOHLCV; the API's 403 names the plan that opens a wider window.
+registerReadTool(
+  'getPoolIndicator',
+  `Get a technical indicator (RSI, EMA, MACD, Bollinger Bands or VWAP) for one pool, computed server-side from the pool's completed OHLCV candles and returned as a time series. Read-only. Use for 'is this pool overbought?', 'RSI of this pair', 'MACD cross on the last candle', or as a ready-made signal input for a trading or screening agent, instead of fetching getPoolOHLCV and computing the indicator yourself. The indicator follows the pool's price as getPoolOHLCV reports it, with no inversed parameter. History depth and interval follow the same plan limits as getPoolOHLCV; asking for more returns 403 with a message naming the plan that allows it. ${INDICATOR_READING_HELP} Params: network (required); pool_address (required); ${INDICATOR_PARAM_HELP}`,
+  {
+    network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
+    pool_address: z.string().describe('REQUIRED: Pool address or identifier'),
+    ...indicatorInputShape(),
+  },
+  async ({ network, pool_address, ...rest }) => {
+    try {
+      return jsonText(await fetchFromAPI(poolIndicatorPath(network, pool_address, rest)));
+    } catch (error) {
+      return errorText(error);
+    }
+  },
+);
+
 // ─── getPoolTransactions ─────────────────────────────────────────────────────
 registerReadTool(
   'getPoolTransactions',
@@ -1217,6 +1301,27 @@ registerReadTool(
       let endpoint = `/networks/${network}/tokens/${token_address}/ohlcv?start=${encodeURIComponent(start)}&limit=${limit}&interval=${interval}`;
       if (end) endpoint += `&end=${encodeURIComponent(end)}`;
       return jsonText(await fetchFromAPI(endpoint), 'ohlcv');
+    } catch (error) {
+      return errorText(error);
+    }
+  },
+);
+
+// ─── getTokenIndicator ───────────────────────────────────────────────────────
+// The same indicators on a token's USD candles, volume-weighted across every
+// pool it trades in (the series getTokenOHLCV returns). Dev/Pro/Enterprise
+// only, like getTokenOHLCV: keyless and free keys get DP403_PLAN_REQUIRED.
+registerReadTool(
+  'getTokenIndicator',
+  `Get a technical indicator (RSI, EMA, MACD, Bollinger Bands or VWAP) for one token, computed server-side from its USD candles across every pool it trades in on the network (the series getTokenOHLCV returns), as a time series. Requires a Dev, Pro or Enterprise plan: set DEXPAPRIKA_API_KEY to that key and DEXPAPRIKA_API_BASE_URL to https://api-pro.dexpaprika.com. On a keyless or free key this returns 403 (DP403_PLAN_REQUIRED); then use getPoolIndicator on the token's main pool, found with getTokenPools sorted by volume. Use for 'RSI of this token' or a token-level signal for an agent; for one pair use getPoolIndicator. ${INDICATOR_READING_HELP} Params: network (required); token_address (required); ${INDICATOR_PARAM_HELP}`,
+  {
+    network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
+    token_address: z.string().describe('REQUIRED: Token contract address'),
+    ...indicatorInputShape(),
+  },
+  async ({ network, token_address, ...rest }) => {
+    try {
+      return jsonText(await fetchFromAPI(tokenIndicatorPath(network, token_address, rest)));
     } catch (error) {
       return errorText(error);
     }

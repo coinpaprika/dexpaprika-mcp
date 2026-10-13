@@ -2,6 +2,16 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.8.0] - 2026-10-13
+
+### Added
+- **`getPoolIndicator`.** RSI, EMA, MACD, Bollinger Bands or VWAP for one pool, computed by the API from the pool's completed candles and returned as a time series, so an agent no longer has to fetch `getPoolOHLCV` and do the maths itself. Pick one with `indicator`, pass `interval`, and optionally `start`, `end`, `limit` and `cursor`. History depth and interval follow the same plan limits as `getPoolOHLCV`.
+- **`getTokenIndicator`.** The same indicators on a token's USD candles across every pool it trades in, the series `getTokenOHLCV` returns. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get `DP403_PLAN_REQUIRED`, whose suggestion now also points at `getPoolIndicator`.
+- **Only the parameters the caller set are sent.** The API refuses a parameter that belongs to another indicator (`fast_period` on `rsi` is a 400), so neither tool fills in defaults. `period` goes with rsi, ema, bbands and vwap; `fast_period`, `slow_period` and `signal_period` with macd; `std_dev` with bbands. The server instructions and the `getCapabilities` workflows and pitfalls say the same. Tool count 18 to 20.
+
+### Fixed
+- **A keyless window refusal no longer sends the user to the paid host.** Since 2026-10-13 a keyless `getPoolOHLCV` or `getPoolIndicator` call outside the window (older than 24 hours, or an interval under `1h`) answers with the same `plan_required` body as a paid-only endpoint, but with `required_tier: "free"`. It came back as `DP403_PLAN_REQUIRED` with the Dev/Pro advice to switch `DEXPAPRIKA_API_BASE_URL` to `api-pro`, which a free key cannot use. That case now says to ask for less or to set a free key from console.dexpaprika.com, and to leave the base URL alone.
+
 ## [2.7.3] - 2026-10-12
 
 ### Added
