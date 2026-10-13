@@ -257,6 +257,29 @@ test('getTokenIndicator on a keyless/free caller returns DP403_PLAN_REQUIRED wit
   } finally { upstream.close(); }
 });
 
+test('a keyless window refusal (required_tier free) says free key, not the paid host', async () => {
+  // Since 2026-10-13 a keyless OHLCV or indicator request outside the window
+  // answers with the plan_required envelope and required_tier "free".
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end('{"error":"plan_required","tier":"keyless","message":"OHLCV history beyond the last 24 hours requires an API key (free key: 7 days, Dev plan: 30 days, Pro plan: unlimited)","required_tier":"free","param":"start"}');
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getPoolIndicator',
+      args: { rationale: RATIONALE, network: 'ethereum', pool_address: '0xpool', indicator: 'rsi', interval: '1h', start: '-7d' },
+    });
+    const { error } = payload(response);
+    assert.equal(error.code, 'DP403_PLAN_REQUIRED');
+    assert.equal(error.metadata.required_tier, 'free');
+    assert.match(error.message, /beyond the last 24 hours/);
+    assert.match(error.suggestion, /free key/);
+    assert.doesNotMatch(error.suggestion, /api-pro/);
+    assert.equal(error.metadata.paid_base_url, undefined);
+  } finally { upstream.close(); }
+});
+
 test('a 400 carries the API message naming the bad parameter', async () => {
   const upstream = await recordingUpstream((req, res) => {
     res.writeHead(400, { 'content-type': 'application/json' });

@@ -308,6 +308,30 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
   // one thing an agent cannot work out: a Dev key sent to the default origin
   // keeps failing. So say both, and say that retrying changes nothing.
   const planRequired = status === 403 ? parsePlanRequired(body) : null;
+  // A keyless caller outside the OHLCV or indicator window (too far back, or
+  // an interval under 1h) gets the same plan_required envelope, but with
+  // required_tier "free". A free key lifts it and stays on the default host,
+  // so the paid-host advice below would send the user the wrong way.
+  if (planRequired && planRequired.requiredTier === 'free') {
+    return buildErrorResponse(
+      ErrorCodes.DP403_PLAN_REQUIRED,
+      planRequired.message ?? 'This request needs a free API key',
+      false,
+      'Retrying unchanged returns the same 403. Either ask for less (a shorter window or a coarser interval, as the message says), ' +
+        'or tell the user a free key lifts this: get one at https://console.dexpaprika.com (no card), set DEXPAPRIKA_API_KEY to it ' +
+        'and restart this server. A free key stays on the default host; do not change DEXPAPRIKA_API_BASE_URL.',
+      undefined,
+      {
+        endpoint,
+        status,
+        required_tier: planRequired.requiredTier,
+        base_url: API_BASE_URL,
+        console_url: 'https://console.dexpaprika.com',
+        docs_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits',
+        pricing_url: 'https://dexpaprika.com/api/pricing',
+      },
+    );
+  }
   if (planRequired) {
     const tier = planRequired.requiredTier
       ? planRequired.requiredTier.charAt(0).toUpperCase() + planRequired.requiredTier.slice(1)
