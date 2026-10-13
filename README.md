@@ -145,9 +145,9 @@ If you prefer zero setup, point any MCP-compatible client directly at the hosted
 }
 ```
 
-## Available Tools (18)
+## Available Tools (20)
 
-This self-host build registers 18 read tools: 17 market-data tools plus `getKeyStatus`. The hosted server at `mcp.dexpaprika.com` registers its own set including `submitFeedback`. Verify either with a live `tools/list`.
+This self-host build registers 20 read tools: 19 market-data tools plus `getKeyStatus`. The hosted server at `mcp.dexpaprika.com` registers its own set including `submitFeedback`. Verify either with a live `tools/list`.
 
 ### Discovery
 
@@ -174,6 +174,7 @@ This self-host build registers 18 read tools: 17 market-data tools plus `getKeyS
 | `getNetworkPoolsFilter` | Filter pools by volume, transactions, creation time | `network` |
 | `getPoolDetails` | Detailed pool info (price, volume, TVL, tokens) | `network`, `pool_address` |
 | `getPoolOHLCV` | Historical OHLCV candle data | `network`, `pool_address`, `start` |
+| `getPoolIndicator` | RSI, EMA, MACD, Bollinger Bands or VWAP for a pool, computed server-side from its candles. Same plan limits on history and interval as `getPoolOHLCV` | `network`, `pool_address`, `indicator` |
 | `getPoolTransactions` | Recent transactions/trades for a pool | `network`, `pool_address` |
 
 ### Token Operations
@@ -183,6 +184,7 @@ This self-host build registers 18 read tools: 17 market-data tools plus `getKeyS
 | `getTokenDetails` | Detailed token information | `network`, `token_address` |
 | `getTokenPools` | Liquidity pools containing a token (network-scoped filter, `results` + cursor pagination) | `network`, `token_address` |
 | `getTokenOHLCV` | Historical USD OHLCV candles for a token, volume-weighted across every pool it trades in. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 | `network`, `token_address`, `start` |
+| `getTokenIndicator` | The same indicators on a token's USD candles across every pool it trades in. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 | `network`, `token_address`, `indicator` |
 | `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
 | `getTopTokens` | Top tokens on a network ranked by volume, liquidity, FDV, or 24h price change | `network` |
 | `filterNetworkTokens` | Filter tokens by volume, liquidity, FDV, transactions, and creation time | `network` |
@@ -244,6 +246,18 @@ const tokenOhlcvData = await getTokenOHLCV({
   start: "-24h",
   interval: "1h",
   limit: 24
+});
+
+// RSI for a pool, computed server-side (no need to fetch candles first).
+// Send only the parameters of the indicator you ask for: period for rsi, ema,
+// bbands and vwap; fast_period, slow_period and signal_period for macd;
+// std_dev for bbands. Any other parameter is refused with 400.
+const rsi = await getPoolIndicator({
+  network: "ethereum",
+  pool_address: "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+  indicator: "rsi",
+  interval: "1h",
+  start: "-24h"
 });
 
 // Batch prices for multiple tokens (max 10):
