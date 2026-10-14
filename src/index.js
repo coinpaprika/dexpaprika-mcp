@@ -312,6 +312,32 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
   // an interval under 1h) gets the same plan_required envelope, but with
   // required_tier "free". A free key lifts it and stays on the default host,
   // so the paid-host advice below would send the user the wrong way.
+  // A keyless search request (getNetworkPools, getDexPools,
+  // getNetworkPoolsFilter, getTokenPools, filterNetworkTokens, getTopTokens)
+  // paging past the first page with `cursor`. The first page stays keyless;
+  // only paging needs a key, so this gets its own message rather than the
+  // generic "this request needs a free API key" below.
+  if (planRequired && planRequired.requiredTier === 'free' && planRequired.param === 'cursor') {
+    return buildErrorResponse(
+      ErrorCodes.DP403_PLAN_REQUIRED,
+      planRequired.message ?? 'Paging past the first page needs an API key. A free key pages without limit: https://console.dexpaprika.com',
+      false,
+      'Retrying unchanged returns the same 403. The first page works without a key; paging with cursor needs one, and a free key pages ' +
+        'without limit: get one at https://console.dexpaprika.com (no card), then set DEXPAPRIKA_API_KEY to it and restart this server. ' +
+        'A free key stays on the default host; do not change DEXPAPRIKA_API_BASE_URL.',
+      undefined,
+      {
+        endpoint,
+        status,
+        required_tier: planRequired.requiredTier,
+        param: planRequired.param,
+        base_url: API_BASE_URL,
+        console_url: 'https://console.dexpaprika.com',
+        docs_url: 'https://docs.dexpaprika.com/knowledge-base/rate-limits#pagination-rules',
+        pricing_url: 'https://dexpaprika.com/api/pricing',
+      },
+    );
+  }
   if (planRequired && planRequired.requiredTier === 'free') {
     return buildErrorResponse(
       ErrorCodes.DP403_PLAN_REQUIRED,
@@ -804,6 +830,7 @@ function buildCapabilitiesDocument() {
       cross_network_search: ['search with token name/symbol/address'],
     },
     common_pitfalls: [
+      'getNetworkPools, getDexPools, getNetworkPoolsFilter, getTokenPools, filterNetworkTokens and getTopTokens return the first page keyless; passing cursor without an API key returns 403 (DP403_PLAN_REQUIRED). A free key pages without limit: set DEXPAPRIKA_API_KEY and register at https://console.dexpaprika.com',
       '/pools (global) returns 410 Gone: use getNetworkPools, which proxies /networks/{network}/pools/search',
       'getTokenPools token filtering is network-scoped only: the cross-network /pools/search silently ignores token_address, and an unknown token_address returns empty results, not an error',
       'getTokenPools no longer supports inversed/reorder or paired_token_address/address (no equivalent on /networks/{network}/pools/search); invert prices client-side and filter results[].tokens for pair queries',
@@ -982,11 +1009,11 @@ registerReadTool(
 // ─── getNetworkPools ─────────────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPools',
-  'Get the top liquidity pools across a whole network, ranked by 24h volume by default, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. This is the primary chain-wide pool discovery tool. Use for \'biggest pools on ethereum\', \'top trading pairs on Base\', or \'most active pools on Solana\'. Narrow to one exchange with getDexPools, or apply numeric/time filters with getNetworkPoolsFilter. Params: network (required slug); limit (default 10, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', canonical *_24h fields, alias order_by); sort_dir \'asc\' or \'desc\' (default \'desc\', alias sort).',
+  'Get the top liquidity pools across a whole network, ranked by 24h volume by default, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). This is the primary chain-wide pool discovery tool. Use for \'biggest pools on ethereum\', \'top trading pairs on Base\', or \'most active pools on Solana\'. Narrow to one exchange with getDexPools, or apply numeric/time filters with getNetworkPoolsFilter. Params: network (required slug); limit (default 10, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', canonical *_24h fields, alias order_by); sort_dir \'asc\' or \'desc\' (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
-    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page; needs an API key (a free key pages without limit). Replaces the old page number.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc'). The REST API calls this parameter sort."),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL: alias of sort_dir; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes sort, so use this name when calling the REST API directly.'),
     sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted. The REST API calls this parameter order_by."),
@@ -1020,12 +1047,12 @@ registerReadTool(
 //     structured error rather than the wrong data under a plausible 200
 registerReadTool(
   'getDexPools',
-  'Get the pools belonging to one specific DEX on one network, e.g. all Uniswap v3 pools on ethereum. Proxies /networks/{network}/pools/search with a dex_name filter (the old /networks/{network}/dexes/{dex}/pools endpoint was removed): rows come back under \'results\' with cursor pagination (has_next_page + next_cursor), and the 24h volume field is volume_usd_24h. Read-only and keyless. Narrower than getNetworkPools (a single exchange, not the whole chain). Use for \'show me Raydium pools\', \'top pairs on PancakeSwap\', or \'liquidity on Orca\'. Get the dex id from getNetworkDexes or search first, and pass that response\'s dex_id field (\'uniswap_v3\'), matched case-insensitively. Do not pass its dex_name field (\'Uniswap V3\'): a human display name returns HTTP 200 with an empty results[] rather than an error, so an empty answer here usually means the wrong form of the name was sent. Params: network (required slug); dex (required id, e.g. \'uniswap_v3\'; the REST API calls this query parameter dex_name); limit (default 10, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', canonical *_24h fields, short legacy names still accepted, alias order_by); sort_dir \'asc\'/\'desc\' (default \'desc\', alias sort). The old page number is gone: page 2 and above return an error pointing at cursor.',
+  'Get the pools belonging to one specific DEX on one network, e.g. all Uniswap v3 pools on ethereum. Proxies /networks/{network}/pools/search with a dex_name filter (the old /networks/{network}/dexes/{dex}/pools endpoint was removed): rows come back under \'results\' with cursor pagination (has_next_page + next_cursor), and the 24h volume field is volume_usd_24h. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Narrower than getNetworkPools (a single exchange, not the whole chain). Use for \'show me Raydium pools\', \'top pairs on PancakeSwap\', or \'liquidity on Orca\'. Get the dex id from getNetworkDexes or search first, and pass that response\'s dex_id field (\'uniswap_v3\'), matched case-insensitively. Do not pass its dex_name field (\'Uniswap V3\'): a human display name returns HTTP 200 with an empty results[] rather than an error, so an empty answer here usually means the wrong form of the name was sent. Params: network (required slug); dex (required id, e.g. \'uniswap_v3\'; the REST API calls this query parameter dex_name); limit (default 10, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', canonical *_24h fields, short legacy names still accepted, alias order_by); sort_dir \'asc\'/\'desc\' (default \'desc\', alias sort). The old page number is gone: page 2 and above return an error pointing at cursor.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     dex: z.string().describe("REQUIRED: the dex_id field from getNetworkDexes (e.g., 'uniswap_v3'), matched case-insensitively. Do not pass that response's dex_name field, the human display name (e.g., 'Uniswap V3'): it returns an empty results[] instead of an error, so a wrong value looks like a real but empty answer. The REST API calls this parameter dex_name."),
     limit: z.coerce.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
-    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page (read `has_next_page` to know if more remain). Replaces the old page number.'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page (read `has_next_page` to know if more remain); needs an API key (a free key pages without limit). Replaces the old page number.'),
     page: z.coerce.number().optional().describe('SUPERSEDED: the replacement endpoint is cursor-paginated and ignores page. page=1 (or 0) still works as the first page; page=2 or above returns a structured error telling you to use cursor.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc'). The REST API calls this parameter sort."),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL: alias of sort_dir; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes sort, so use this name when calling the REST API directly.'),
@@ -1062,11 +1089,11 @@ registerReadTool(
 // ─── getNetworkPoolsFilter ───────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPoolsFilter',
-  'Get pools on one network filtered by numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getNetworkPools when the user gives numeric constraints or a time window. Use for \'pools over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Optional filters (AND-combined): volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get pools on one network filtered by numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Choose this over getNetworkPools when the user gives numeric constraints or a time window. Use for \'pools over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Optional filters (AND-combined): volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
-    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page; needs an API key (a free key pages without limit). Replaces the old page number.'),
     volume_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 24h volume in USD'),
     volume_24h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 24h volume in USD'),
     volume_7d_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 7d volume in USD'),
@@ -1228,12 +1255,12 @@ registerReadTool(
 // silently returning data that does not match the request.
 registerReadTool(
   'getTokenPools',
-  'Get the liquidity pools that contain a specific token on one network, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Use for \'which pools hold WETH on ethereum?\' or \'liquidity venues for 0x...\'. Network-scoped, so run search first if unsure of the network; unknown addresses return empty results, not an error. For the token\'s own price use getTokenDetails. Params: network (required); token_address (required); limit (default 10, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort). Extra params such as inversed or paired_token_address are unsupported and error.',
+  'Get the liquidity pools that contain a specific token on one network, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Use for \'which pools hold WETH on ethereum?\' or \'liquidity venues for 0x...\'. Network-scoped, so run search first if unsure of the network; unknown addresses return empty results, not an error. For the token\'s own price use getTokenDetails. Params: network (required); token_address (required); limit (default 10, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort). Extra params such as inversed or paired_token_address are unsupported and error.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     token_address: z.string().describe('REQUIRED: Token contract address. Results are restricted to pools on the given network containing this token. Unknown addresses return empty results, not an error.'),
     limit: z.coerce.number().optional().default(10).describe('OPTIONAL: Number of items per page (default: 10, max: 100)'),
-    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page; needs an API key (a free key pages without limit). Replaces the old page number.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc'). The REST API calls this parameter sort."),
     sort: z.enum(['asc', 'desc']).optional().describe('OPTIONAL: alias of sort_dir; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes sort, so use this name when calling the REST API directly.'),
     sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted. The REST API calls this parameter order_by."),
@@ -1367,11 +1394,11 @@ registerReadTool(
 // ─── filterNetworkTokens ─────────────────────────────────────────────────────
 registerReadTool(
   'filterNetworkTokens',
-  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, price_change_percentage_24h_min/max, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, price_change_percentage_24h_min/max, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
-    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page; needs an API key (a free key pages without limit). Replaces the old page number.'),
     volume_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 24h volume in USD'),
     volume_24h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 24h volume in USD'),
     liquidity_usd_min: z.coerce.number().optional().describe('OPTIONAL: Minimum token liquidity in USD'),
@@ -1402,11 +1429,11 @@ registerReadTool(
 // ─── getTopTokens ────────────────────────────────────────────────────────────
 registerReadTool(
   'getTopTokens',
-  'Get the top tokens on one network ranked by volume, liquidity, transactions, FDV, or 24h price change, returned under \'results\' with has_next_page and next_cursor. Read-only and keyless. Use for \'top gainers on Solana\', \'highest-volume tokens on Base\', or \'biggest tokens by FDV on ethereum\'. For arbitrary numeric filters or a time window use filterNetworkTokens instead. Params: network (required slug); limit (default 50, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', alias order_by), noting that ranking by raw price is unsupported and silently falls back to volume; sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get the top tokens on one network ranked by volume, liquidity, transactions, FDV, or 24h price change, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Use for \'top gainers on Solana\', \'highest-volume tokens on Base\', or \'biggest tokens by FDV on ethereum\'. For arbitrary numeric filters or a time window use filterNetworkTokens instead. Params: network (required slug); limit (default 50, max 100); cursor (pass previous next_cursor to page); sort_by (default \'volume_usd_24h\', alias order_by), noting that ranking by raw price is unsupported and silently falls back to volume; sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
-    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page. Replaces the old page number.'),
+    cursor: z.string().optional().describe('OPTIONAL: Pagination cursor. Pass `next_cursor` from a previous response to fetch the next page; needs an API key (a free key pages without limit). Replaces the old page number.'),
     sort_by: z.enum(TOKEN_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical names; short legacy names are still accepted. The REST API calls this parameter order_by."),
     order_by: z.enum(TOKEN_SORT_FIELDS).optional().describe('OPTIONAL: alias of sort_by; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes order_by, so use this name when calling the REST API directly.'),
     sort_dir: z.enum(['asc', 'desc']).optional().describe("OPTIONAL (preferred): Sort direction (default: 'desc'). The REST API calls this parameter sort."),

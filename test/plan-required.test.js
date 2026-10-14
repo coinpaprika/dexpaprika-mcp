@@ -10,11 +10,31 @@ test('reads the tier and message from a live plan_required body', () => {
   assert.deepEqual(parsePlanRequired(LIVE), {
     requiredTier: 'dev',
     message: 'this endpoint requires a Dev or Pro plan',
+    param: null,
   });
 });
 
 test('a plan_required body without required_tier still matches', () => {
-  assert.deepEqual(parsePlanRequired('{"error":"plan_required"}'), { requiredTier: null, message: null });
+  assert.deepEqual(parsePlanRequired('{"error":"plan_required"}'), { requiredTier: null, message: null, param: null });
+});
+
+// ── `param`: keyless search paging (cursor), live in warning mode since
+// 14 Oct 2026, blocking about a week after ─────────────────────────────────
+const CURSOR_403 = '{"error":"plan_required","tier":"keyless","required_tier":"free","param":"cursor","message":"Search results beyond the first page require an API key (free key: all pages). Create one in under a minute at https://console.dexpaprika.com"}';
+
+test('reads param from a keyless cursor paging refusal', () => {
+  assert.deepEqual(parsePlanRequired(CURSOR_403), {
+    requiredTier: 'free',
+    message: 'Search results beyond the first page require an API key (free key: all pages). Create one in under a minute at https://console.dexpaprika.com',
+    param: 'cursor',
+  });
+});
+
+test('a non-string or empty param is null, not coerced', () => {
+  for (const value of [123, '', null, undefined, {}]) {
+    const body = JSON.stringify({ error: 'plan_required', param: value });
+    assert.equal(parsePlanRequired(body).param, null, `expected ${JSON.stringify(value)} to be rejected`);
+  }
 });
 
 // Other 403s carry their own advice (an OHLCV window, a wrong host) and must
