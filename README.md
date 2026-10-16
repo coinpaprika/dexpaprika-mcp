@@ -170,7 +170,7 @@ This self-host build registers 20 read tools: 19 market-data tools plus `getKeyS
 | Tool | Description | Required Parameters |
 |------|-------------|---------------------|
 | `getNetworkPools` | **PRIMARY**. Get top liquidity pools on a network | `network` |
-| `getDexPools` | Get pools from a specific DEX (rows under `results`, cursor pagination) | `network`, `dex` |
+| `getDexPools` | Get pools from a specific DEX (rows under `results`, cursor pagination; paging past the first page needs a key) | `network`, `dex` |
 | `getNetworkPoolsFilter` | Filter pools by volume, transactions, creation time | `network` |
 | `getPoolDetails` | Detailed pool info (price, volume, TVL, tokens) | `network`, `pool_address` |
 | `getPoolOHLCV` | Historical OHLCV candle data | `network`, `pool_address`, `start` |
@@ -182,7 +182,7 @@ This self-host build registers 20 read tools: 19 market-data tools plus `getKeyS
 | Tool | Description | Required Parameters |
 |------|-------------|---------------------|
 | `getTokenDetails` | Detailed token information | `network`, `token_address` |
-| `getTokenPools` | Liquidity pools containing a token (network-scoped filter, `results` + cursor pagination) | `network`, `token_address` |
+| `getTokenPools` | Liquidity pools containing a token (network-scoped filter, `results` + cursor pagination; paging past the first page needs a key) | `network`, `token_address` |
 | `getTokenOHLCV` | Historical USD OHLCV candles for a token, volume-weighted across every pool it trades in. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 | `network`, `token_address`, `start` |
 | `getTokenIndicator` | The same indicators on a token's USD candles across every pool it trades in. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 | `network`, `token_address`, `indicator` |
 | `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
@@ -202,7 +202,9 @@ const solanaJupToken = await getTokenDetails({
 });
 
 // Find pools containing a token (returns `results` with cursor pagination;
-// the token filter only works network-scoped):
+// the token filter only works network-scoped). This first page works without
+// a key; passing the response's next_cursor back as cursor to fetch a later
+// page needs an API key (a free key pages without limit):
 const jupiterPools = await getTokenPools({
   network: "solana",
   token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
@@ -210,7 +212,7 @@ const jupiterPools = await getTokenPools({
   limit: 5
 });
 
-// Get top pools on Ethereum (returns `results` with cursor pagination):
+// Get top pools on Ethereum (first page, returns `results` with cursor pagination):
 const ethereumPools = await getNetworkPools({
   network: "ethereum",
   order_by: "volume_usd_24h",
@@ -285,6 +287,7 @@ const prices = await getTokenMultiPrices({
 ## Rate Limits & Performance
 
 - **Free tier**: keyless, no signup, at 15 requests per minute. A free API key raises that to 30 requests per minute, raises the monthly quota, and unlocks streaming: register at https://console.dexpaprika.com. Pro is $99/month at 500 requests per minute, and there is a $30 Dev plan at 120. One request costs one credit; batch endpoints cost one credit per item. Full docs at https://docs.dexpaprika.com. Monthly quotas change, so read them here rather than from this page: https://dexpaprika.com/api/pricing
+- **Paging search results needs a key**: on `getNetworkPools`, `getDexPools`, `getNetworkPoolsFilter`, `getTokenPools`, `filterNetworkTokens` and `getTopTokens`, the first page works keyless, but passing `cursor` to fetch a later page requires an API key. A free key pages without limit.
 - **Data delay**: up to 60 seconds on the free tier, real-time on the paid plans
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Error Handling**: Structured errors with codes, suggestions, and retry guidance

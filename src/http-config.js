@@ -152,7 +152,12 @@ export const PAID_BASE_URL = 'https://api-pro.dexpaprika.com';
  * It does not name the paid host, which is the part an agent cannot guess, so
  * the caller adds it.
  *
- * @returns {{ requiredTier: string|null, message: string|null } | null}
+ * `param` names the specific argument the refusal is about when the API says
+ * so, e.g. `"cursor"` for a keyless search request paging past the first
+ * page (live in warning mode since 14 Oct 2026, blocking about a week after).
+ * Null when the body does not name one, which is most plan_required bodies.
+ *
+ * @returns {{ requiredTier: string|null, message: string|null, param: string|null } | null}
  *   null when the body is missing, not JSON, or a different kind of 403
  */
 export function parsePlanRequired(body) {
@@ -167,5 +172,6 @@ export function parsePlanRequired(body) {
   return {
     requiredTier: typeof parsed.required_tier === 'string' && parsed.required_tier ? parsed.required_tier : null,
     message: typeof parsed.message === 'string' && parsed.message ? parsed.message : null,
+    param: typeof parsed.param === 'string' && parsed.param ? parsed.param : null,
   };
 }

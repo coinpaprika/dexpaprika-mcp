@@ -280,6 +280,55 @@ test('a keyless window refusal (required_tier free) says free key, not the paid 
   } finally { upstream.close(); }
 });
 
+test('a keyless cursor paging refusal (required_tier free, param cursor) gets a paging-specific message', async () => {
+  // Live in warning mode since 14 Oct 2026 on the four search endpoints
+  // (/networks/{network}/pools/search, /pools/search, tokens/search variants):
+  // keyless + cursor returns this plan_required envelope with param "cursor".
+  // The first page is unaffected; only paging needs a key.
+  const message = 'Search results beyond the first page require an API key (free key: all pages). Create one in under a minute at https://console.dexpaprika.com';
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'plan_required', tier: 'keyless', required_tier: 'free', param: 'cursor', message }));
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getNetworkPools',
+      args: { rationale: RATIONALE, network: 'ethereum', cursor: 'abc123' },
+    });
+    const { error } = payload(response);
+    assert.equal(error.code, 'DP403_PLAN_REQUIRED');
+    assert.equal(error.retryable, false);
+    assert.equal(error.metadata.required_tier, 'free');
+    assert.equal(error.metadata.param, 'cursor');
+    // The API's own message is preferred over any hint we compose.
+    assert.equal(error.message, message);
+    assert.match(error.suggestion, /cursor/);
+    assert.match(error.suggestion, /DEXPAPRIKA_API_KEY/);
+    assert.doesNotMatch(error.suggestion, /api-pro/);
+    assert.equal(error.metadata.paid_base_url, undefined);
+  } finally { upstream.close(); }
+});
+
+test('a keyless cursor paging refusal falls back to the hint when the API sends no message', async () => {
+  const upstream = await recordingUpstream((req, res) => {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: 'plan_required', tier: 'keyless', required_tier: 'free', param: 'cursor' }));
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: '' },
+      toolName: 'getTopTokens',
+      args: { rationale: RATIONALE, network: 'ethereum', cursor: 'abc123' },
+    });
+    const { error } = payload(response);
+    assert.equal(error.code, 'DP403_PLAN_REQUIRED');
+    assert.match(error.message, /[Pp]aging/);
+    assert.match(error.message, /console\.dexpaprika\.com/);
+    assert.doesNotMatch(error.message, /Bearer/i);
+  } finally { upstream.close(); }
+});
+
 test('a 400 carries the API message naming the bad parameter', async () => {
   const upstream = await recordingUpstream((req, res) => {
     res.writeHead(400, { 'content-type': 'application/json' });
