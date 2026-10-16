@@ -198,10 +198,27 @@ test('getTokenOHLCV calls the token ohlcv path with no inversed param', async ()
 });
 
 test('getTokenOHLCV on a keyless/free caller returns the 403 naming the required plan', async () => {
+  // Live body, captured 2026-10-16 from a keyless call to
+  // /networks/ethereum/tokens/{address}/ohlcv: the API already sends the full
+  // plan_required envelope here, the same shape getPoolTransactions and
+  // getTokenIndicator get. That means the generic DP403_PLAN_REQUIRED branch
+  // (not the bare-message DP403_ERROR fallback) handles this today, with
+  // console_url, docs_url, pricing_url and paid_base_url already attached.
   const message = 'this endpoint requires a Dev or Pro plan';
   const upstream = await recordingUpstream((req, res) => {
     res.writeHead(403, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ message }));
+    res.end(JSON.stringify({
+      error: 'plan_required',
+      tier: 'keyless',
+      message,
+      required_tier: 'dev',
+      links: {
+        coupon: 'https://dexpaprika.com/api/pricing?coupon=START10',
+        docs: 'https://docs.dexpaprika.com/',
+        pricing: 'https://dexpaprika.com/api/pricing',
+        register: 'https://console.dexpaprika.com',
+      },
+    }));
   });
   try {
     const response = await callTool({
@@ -210,9 +227,16 @@ test('getTokenOHLCV on a keyless/free caller returns the 403 naming the required
       args: { rationale: RATIONALE, network: 'ethereum', token_address: '0xtoken', start: '-24h' },
     });
     const { error } = payload(response);
-    assert.equal(error.code, 'DP403_ERROR');
+    assert.equal(error.code, 'DP403_PLAN_REQUIRED');
     assert.equal(error.message, message);
     assert.equal(error.retryable, false);
+    assert.equal(error.metadata.required_tier, 'dev');
+    assert.equal(error.metadata.paid_base_url, 'https://api-pro.dexpaprika.com');
+    assert.equal(error.metadata.console_url, 'https://console.dexpaprika.com');
+    assert.equal(error.metadata.docs_url, 'https://docs.dexpaprika.com/api-pro/upgrading');
+    assert.equal(error.metadata.pricing_url, 'https://dexpaprika.com/api/pricing');
+    assert.match(error.suggestion, /Dev plan or higher/);
+    assert.match(error.suggestion, /api-pro\.dexpaprika\.com/);
   } finally { upstream.close(); }
 });
 
