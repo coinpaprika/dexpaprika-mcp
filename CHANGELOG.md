@@ -2,6 +2,14 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.9.0] - 2026-10-16
+
+### Changed
+- **Paging search results past the first page now says it needs an API key.** `api.dexpaprika.com` warns today and will return 403 soon when a keyless request pages with `cursor`; the first page stays keyless, and a free key pages without limit. `getNetworkPools`, `getDexPools`, `getNetworkPoolsFilter`, `getTokenPools`, `filterNetworkTokens` and `getTopTokens`: the tool and `cursor` descriptions say so instead of calling the tool "keyless" without qualification. `parsePlanRequired` now reads the API's `param` field, and on a 403 with `required_tier: "free"` and `param: "cursor"` the error gives a paging-specific message (the API's own message first, then a fallback) naming `DEXPAPRIKA_API_KEY`, instead of the generic free-key wording used for other `required_tier: "free"` refusals such as an OHLCV window. `getCapabilities` common_pitfalls and the README tool table, usage examples and rate-limit notes say the same.
+
+### Verified
+- **`getTokenOHLCV`'s 403 already carries the full plan-required guidance.** Checked the live API response for a keyless call: it sends `{"error":"plan_required","required_tier":"dev",...}`, the same envelope `getPoolTransactions` and `getTokenIndicator` get, so it already goes through the generic `DP403_PLAN_REQUIRED` path with `console_url`, `docs_url`, `pricing_url` and `paid_base_url` attached and the Dev/Pro/Enterprise, `api-pro.dexpaprika.com` wording. No code change was needed; the wire test for this case mocked an unrealistic body and has been corrected to match the live shape.
+
 ## [2.8.0] - 2026-10-13
 
 ### Added
