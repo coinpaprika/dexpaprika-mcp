@@ -43,13 +43,16 @@ for (const p of PAYLOADS) {
     await client.callTool({ name, arguments: { ...args, rationale: R } }).catch(() => {});
   }
 }
+// The key status check must still reach the API.
+await client.callTool({ name: 'getKeyStatus', arguments: {} }).catch(() => {});
 // A real id must still reach the API.
 await client.callTool({ name: 'getTokenDetails', arguments: { network: 'sui', token_address: '0x2::sui::SUI', rationale: R } });
 await client.close();
 upstream.close();
 
-const escaped = seen.filter((u) => !u.startsWith('/networks/') || /outside|\.\./i.test(decodeURIComponent(u)));
+const escaped = seen.filter((u) => (!u.startsWith('/networks/') && u !== '/usage') || /outside|\.\./i.test(decodeURIComponent(u)));
 const legit = seen.filter((u) => u.startsWith('/networks/sui/tokens/0x2::sui::SUI'));
-console.log(`requests seen: ${seen.length}, escaped /networks: ${escaped.length}, real id reached: ${legit.length}`);
+const usage = seen.filter((u) => u === '/usage');
+console.log(`requests seen: ${seen.length}, escaped /networks: ${escaped.length}, real id reached: ${legit.length}, /usage reached: ${usage.length}`);
 if (escaped.length) console.log(escaped.join('\n'));
-process.exit(escaped.length === 0 && legit.length === 1 ? 0 : 1);
+process.exit(escaped.length === 0 && legit.length === 1 && usage.length === 1 ? 0 : 1);

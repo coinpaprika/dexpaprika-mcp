@@ -11,6 +11,7 @@ const ALLOWED_SHAPES = [
   /^\/networks$/,
   /^\/search$/,
   /^\/stats$/,
+  /^\/usage$/,
   new RegExp(`^/networks/${S}$`),
   new RegExp(`^/networks/${S}/dexes$`),
   new RegExp(`^/networks/${S}/multi/prices$`),
