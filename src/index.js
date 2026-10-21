@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createRequire } from 'module';
 import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
 import { indicatorInputShape, INDICATOR_PARAM_HELP, INDICATOR_READING_HELP, poolIndicatorPath, tokenIndicatorPath } from './indicators.js';
+import { safeUpstreamUrl } from './safe-path.js';
 import { buildHeaders, PAID_BASE_URL, parsePlanRequired, parseRetryAfterSeconds, resolveApiKey, resolveBaseUrl } from './http-config.js';
 
 const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
@@ -413,7 +414,8 @@ async function fetchFromAPI(endpoint) {
   // Synonym normalization so agent-supplied `eth`, `matic`, etc. route to the
   // canonical network IDs. No-op for already-canonical IDs and non-/networks paths.
   endpoint = normalizeNetworkPath(endpoint);
-  const url = `${API_BASE_URL}${endpoint}`;
+  // Throws before anything is sent if an argument tries to change the path.
+  const url = safeUpstreamUrl(API_BASE_URL, endpoint);
   const response = await fetch(url, { headers: currentHeaders() });
   if (!response.ok) {
     // Read the error body so a deprecation hint (a "replacement" field) can be
