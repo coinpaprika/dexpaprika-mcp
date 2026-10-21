@@ -2,6 +2,14 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.9.1] - 2026-10-21
+
+### Security
+- **Tool arguments can no longer change which API path a request goes to.** Arguments such as `network`, `pool_address` and `token_address` were placed into the request path as given, so a value containing `../` could send the request, with your configured key, to a path outside `/networks`. Every upstream URL now passes one check before it is fetched: it must have one of the known path shapes, no segment may be a dot segment or contain `\`, `%`, `#`, `?`, whitespace or control characters, and the path must be unchanged after URL parsing. Anything else is refused before a request is made. `src/test_path_safety.js` runs the server over stdio against a local recorder and fails if any request leaves the known shapes.
+
+### Fixed
+- **`getKeyStatus` works behind the new check.** Its `/usage` call is on the allowed list, so a working key is no longer reported as rejected.
+
 ## [2.9.0] - 2026-10-16
 
 ### Changed
