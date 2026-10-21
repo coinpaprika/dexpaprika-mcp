@@ -30,6 +30,9 @@ const PAYLOADS = [
   '../../outside/target', '../../../outside/other', '..', 'x/../../../outside/target',
   '..%2F..%2Foutside%2Ftarget', '%2e%2e/%2e%2e/outside/target', '..\\..\\outside\\target',
   '0xabc?x=1/../../outside/target', '0xabc#/../../outside',
+  // Segments only another parser would read as ".." or "/": path parameters, Unicode look-alikes.
+  '..;', '..;/..;/outside', '\u2024\u2024', '\uFF0E\uFF0E', '\uFF0E\uFF0E\uFF0Foutside\uFF0Ftarget',
+  '\u3002\u3002', '.\u200B.', 'x\u2215y', '..\u00AD', 'x?y=1',
 ];
 const R = 'Regression test for the path traversal fix in the upstream URL builder.';
 for (const p of PAYLOADS) {
@@ -50,7 +53,8 @@ await client.callTool({ name: 'getTokenDetails', arguments: { network: 'sui', to
 await client.close();
 upstream.close();
 
-const escaped = seen.filter((u) => (!u.startsWith('/networks/') && u !== '/usage') || /outside|\.\./i.test(decodeURIComponent(u)));
+const escaped = seen.filter((u) => (!u.startsWith('/networks/') && u !== '/usage')
+  || /outside|\.\.|;|%|y=1/i.test(decodeURIComponent(u)) || !/^[\x21-\x7e]+$/.test(decodeURIComponent(u)));
 const legit = seen.filter((u) => u.startsWith('/networks/sui/tokens/0x2::sui::SUI'));
 const usage = seen.filter((u) => u === '/usage');
 console.log(`requests seen: ${seen.length}, escaped /networks: ${escaped.length}, real id reached: ${legit.length}, /usage reached: ${usage.length}`);

@@ -458,3 +458,46 @@ test('getNetworkPoolsFilter sends the 48h price-change bounds', async () => {
     assert.equal(q.get('price_change_percentage_48h_max'), '-50');
   } finally { upstream.close(); }
 });
+
+test('a redirect off the allowed paths or to another host is not followed with the key', async () => {
+  const elsewhere = await recordingUpstream((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{}');
+  });
+  const locations = ['/outside/target', '/networks/ethereum/tokens/..;', `http://127.0.0.1:${elsewhere.port}/networks/ethereum/tokens/0xabc`];
+  const upstream = await recordingUpstream((req, res, n) => {
+    res.writeHead(302, { location: locations[n - 1] ?? '/outside/target' });
+    res.end();
+  });
+  try {
+    for (const _ of locations) {
+      const response = await callTool({
+        env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: 'api_wire_test_key' },
+        toolName: 'getTokenDetails', args: { rationale: RATIONALE, network: 'ethereum', token_address: '0xabc' },
+      });
+      assert.equal(payload(response).error.code, 'DP502_REDIRECT_REFUSED');
+    }
+    assert.deepEqual(upstream.seen.map((r) => r.url), Array(locations.length).fill('/networks/ethereum/tokens/0xabc'));
+    assert.equal(elsewhere.seen.length, 0, 'the key went to another host');
+  } finally { upstream.close(); elsewhere.close(); }
+});
+
+test('a same-host redirect to an allowed path is followed', async () => {
+  const upstream = await recordingUpstream((req, res, n) => {
+    if (n === 1) {
+      res.writeHead(301, { location: '/networks/ethereum/tokens/0xdef' });
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"id":"0xdef"}');
+  });
+  try {
+    const response = await callTool({
+      env: { DEXPAPRIKA_API_BASE_URL: `http://127.0.0.1:${upstream.port}`, DEXPAPRIKA_API_KEY: 'api_wire_test_key' },
+      toolName: 'getTokenDetails', args: { rationale: RATIONALE, network: 'ethereum', token_address: '0xabc' },
+    });
+    assert.equal(payload(response).id, '0xdef');
+    assert.deepEqual(upstream.seen.map((r) => r.url), ['/networks/ethereum/tokens/0xabc', '/networks/ethereum/tokens/0xdef']);
+  } finally { upstream.close(); }
+});

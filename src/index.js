@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { createRequire } from 'module';
 import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
 import { indicatorInputShape, INDICATOR_PARAM_HELP, INDICATOR_READING_HELP, poolIndicatorPath, tokenIndicatorPath } from './indicators.js';
-import { safeUpstreamUrl } from './safe-path.js';
+import { ADDRESS_ID, NETWORK_ID, safeUpstreamUrl, upstreamRedirectTarget } from './safe-path.js';
 import { buildHeaders, PAID_BASE_URL, parsePlanRequired, parseRetryAfterSeconds, resolveApiKey, resolveBaseUrl } from './http-config.js';
 
 const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
@@ -410,13 +410,37 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
 // composed, so eth -> ethereum etc. resolve for every /networks/* endpoint.
 // Logging goes to stderr only (stdout carries the JSON-RPC frames).
 // ─────────────────────────────────────────────────────────────────────────────
+const MAX_UPSTREAM_REDIRECTS = 3;
+
 async function fetchFromAPI(endpoint) {
   // Synonym normalization so agent-supplied `eth`, `matic`, etc. route to the
   // canonical network IDs. No-op for already-canonical IDs and non-/networks paths.
   endpoint = normalizeNetworkPath(endpoint);
   // Throws before anything is sent if an argument tries to change the path.
-  const url = safeUpstreamUrl(API_BASE_URL, endpoint);
-  const response = await fetch(url, { headers: currentHeaders() });
+  let url = safeUpstreamUrl(API_BASE_URL, endpoint);
+  let response;
+  // Redirects are not left to fetch: it would repeat the request, key included, to wherever
+  // Location points. A hop is followed only if it passes the same gate as the first URL.
+  for (let hops = 0; ; hops += 1) {
+    response = await fetch(url, { headers: currentHeaders(), redirect: 'manual' });
+    if (response.status < 300 || response.status > 399) break;
+    const next = hops < MAX_UPSTREAM_REDIRECTS
+      ? upstreamRedirectTarget(API_BASE_URL, url, response.headers.get('location'))
+      : null;
+    await response.body?.cancel().catch(() => {});
+    if (!next) {
+      console.error(`[upstream] url=${url} http_status=${response.status} redirect refused`);
+      throw buildErrorResponse(
+        'DP502_REDIRECT_REFUSED',
+        'The API answered with a redirect this server does not follow, so the request was not repeated.',
+        false,
+        'Check that DEXPAPRIKA_API_BASE_URL is https://api.dexpaprika.com or https://api-pro.dexpaprika.com, then try again later.',
+        undefined,
+        { endpoint, status: response.status },
+      );
+    }
+    url = next;
+  }
   if (!response.ok) {
     // Read the error body so a deprecation hint (a "replacement" field) can be
     // surfaced to the caller. Defensive: the body may be empty or non-JSON, in
@@ -921,6 +945,31 @@ server.registerTool(
 TOOL_COUNT += 1;
 
 // Helper: register a read tool with rationale + outputSchema + read-only annotations.
+// Identifier arguments are checked against the characters real ids use before a handler runs,
+// so a value that is not an id never becomes part of a URL. safeUpstreamUrl checks the built
+// path again.
+function invalidIdentifier(args) {
+  if (!args || typeof args !== 'object') return null;
+  if (typeof args.network === 'string' && !NETWORK_ID.test(String(normalizeNetwork(args.network)))) {
+    return buildErrorResponse(
+      ErrorCodes.DP400_INVALID_NETWORK,
+      'network must be a network id such as ethereum, solana or bob_network.',
+      false,
+      'Call getNetworks for the list of network ids.',
+    );
+  }
+  const addresses = [args.pool_address, args.token_address, ...(Array.isArray(args.tokens) ? args.tokens : [])];
+  if (addresses.some((a) => typeof a === 'string' && !ADDRESS_ID.test(a))) {
+    return buildErrorResponse(
+      ErrorCodes.DP400_INVALID_ADDRESS,
+      'Pool and token addresses may contain only letters, digits, ":", "_" and "-".',
+      false,
+      'Pass the address exactly as getTokenPools, getNetworkPools or search return it.',
+    );
+  }
+  return null;
+}
+
 function registerReadTool(name, description, inputShape, handler) {
   server.registerTool(
     name,
@@ -930,7 +979,10 @@ function registerReadTool(name, description, inputShape, handler) {
       outputSchema: outputSchemaFor(name),
       annotations: ANNOTATIONS_READ_ONLY,
     },
-    handler,
+    (args, extra) => {
+      const invalid = invalidIdentifier(args);
+      return invalid ? errorText(invalid) : handler(args, extra);
+    },
   );
   TOOL_COUNT += 1;
 }
