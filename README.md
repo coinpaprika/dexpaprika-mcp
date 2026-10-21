@@ -1,6 +1,7 @@
 # DexPaprika MCP Server
 
 [![smithery badge](https://smithery.ai/badge/coinpaprika/dexpaprika)](https://smithery.ai/servers/coinpaprika/dexpaprika)
+[![MCP tools: verify changes](https://legion-api.com/drift/badge/com.dexpaprika/dexpaprika.svg)](https://legion-api.com/drift/proof/com.dexpaprika/dexpaprika)
 
 A Model Context Protocol (MCP) server that provides on-demand access to DexPaprika's cryptocurrency and DEX data API. Built specifically for AI assistants like Claude to programmatically fetch current token, pool and DEX data with zero configuration.
 
