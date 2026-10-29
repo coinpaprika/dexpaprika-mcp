@@ -3,11 +3,12 @@
   "name": "com.dexpaprika/dexpaprika",
   "title": "DexPaprika",
   "description": "DEX and on-chain data: liquidity pools, token prices, swaps, and trading volume.",
+  "websiteUrl": "https://docs.dexpaprika.com/ai-integration/hosted-mcp-server",
   "repository": {
     "url": "https://github.com/coinpaprika/dexpaprika-mcp",
     "source": "github"
   },
-  "version": "2.8.0",
+  "version": "2.9.0",
   "remotes": [
     {
       "type": "streamable-http",
