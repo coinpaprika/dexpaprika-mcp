@@ -2,6 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.9.3] - 2026-11-04
+
+### Changed
+- **Search on keyless and free keys is an hour behind on new pools and tokens, and the tools say so.** From 2026-11-04 the API leaves pools and tokens created in the last hour out of `/networks/{network}/pools/search` and `/networks/{network}/tokens/search` for keyless and free callers; Dev, Pro and Enterprise keys on `api-pro.dexpaprika.com` see them as they're indexed. There is no error, so a `created_after` window shorter than an hour comes back empty. The `getNetworkPoolsFilter` and `filterNetworkTokens` descriptions, their `created_after` parameters, the `getCapabilities` common pitfalls and the README now say this, so an agent reads an empty result as the plan and not as a quiet market. No code path changed.
+
 ## [2.9.2] - 2026-10-21
 
 ### Security
