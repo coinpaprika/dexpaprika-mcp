@@ -90,7 +90,7 @@ test('the advertised limits carry a live source, because they change', async () 
   assert.equal(stats.console_url, 'https://console.dexpaprika.com');
 });
 
-// From 2026-11-04 keyless and free search leaves out the newest hour, with no
+// From 2026-11-05 keyless and free search leaves out the newest hour, with no
 // error. An agent that is not told reads an empty created_after window as a
 // quiet market, so every place it plans from has to say so.
 test('the filter tools and the pitfalls say search is an hour behind without a Dev plan', async () => {
@@ -104,6 +104,7 @@ test('the filter tools and the pitfalls say search is an hour behind without a D
     assert.match(tool.description, /created in the last hour are left out/, `${name} description`);
     assert.match(tool.inputSchema.properties.created_after.description, /last hour are left out/, `${name} created_after`);
   }
+  assert.match(tools.find((t) => t.name === 'getTokenPools').description, /launched in the last hour shows no pools/, 'getTokenPools description');
   const { common_pitfalls } = JSON.parse(found.get(3).result.content[0].text);
   assert.ok(common_pitfalls.some((p) => /last hour/.test(p) && /search-freshness/.test(p)), 'no search-freshness pitfall');
 });
