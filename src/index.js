@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createRequire } from 'module';
 import { buildPoolSearchParams, buildTokenSearchParams, toQueryString } from './search-mapping.js';
 import { indicatorInputShape, INDICATOR_PARAM_HELP, INDICATOR_READING_HELP, poolIndicatorPath, tokenIndicatorPath } from './indicators.js';
+import { ADDRESS_ID, NETWORK_ID, safeUpstreamUrl, upstreamRedirectTarget } from './safe-path.js';
 import { buildHeaders, PAID_BASE_URL, parsePlanRequired, parseRetryAfterSeconds, resolveApiKey, resolveBaseUrl } from './http-config.js';
 
 const PACKAGE_VERSION = createRequire(import.meta.url)('../package.json').version;
@@ -409,12 +410,37 @@ function parseAPIError(status, statusText, endpoint, body, responseHeaders) {
 // composed, so eth -> ethereum etc. resolve for every /networks/* endpoint.
 // Logging goes to stderr only (stdout carries the JSON-RPC frames).
 // ─────────────────────────────────────────────────────────────────────────────
+const MAX_UPSTREAM_REDIRECTS = 3;
+
 async function fetchFromAPI(endpoint) {
   // Synonym normalization so agent-supplied `eth`, `matic`, etc. route to the
   // canonical network IDs. No-op for already-canonical IDs and non-/networks paths.
   endpoint = normalizeNetworkPath(endpoint);
-  const url = `${API_BASE_URL}${endpoint}`;
-  const response = await fetch(url, { headers: currentHeaders() });
+  // Throws before anything is sent if an argument tries to change the path.
+  let url = safeUpstreamUrl(API_BASE_URL, endpoint);
+  let response;
+  // Redirects are not left to fetch: it would repeat the request, key included, to wherever
+  // Location points. A hop is followed only if it passes the same gate as the first URL.
+  for (let hops = 0; ; hops += 1) {
+    response = await fetch(url, { headers: currentHeaders(), redirect: 'manual' });
+    if (response.status < 300 || response.status > 399) break;
+    const next = hops < MAX_UPSTREAM_REDIRECTS
+      ? upstreamRedirectTarget(API_BASE_URL, url, response.headers.get('location'))
+      : null;
+    await response.body?.cancel().catch(() => {});
+    if (!next) {
+      console.error(`[upstream] url=${url} http_status=${response.status} redirect refused`);
+      throw buildErrorResponse(
+        'DP502_REDIRECT_REFUSED',
+        'The API answered with a redirect this server does not follow, so the request was not repeated.',
+        false,
+        'Check that DEXPAPRIKA_API_BASE_URL is https://api.dexpaprika.com or https://api-pro.dexpaprika.com, then try again later.',
+        undefined,
+        { endpoint, status: response.status },
+      );
+    }
+    url = next;
+  }
   if (!response.ok) {
     // Read the error body so a deprecation hint (a "replacement" field) can be
     // surfaced to the caller. Defensive: the body may be empty or non-JSON, in
@@ -835,6 +861,7 @@ function buildCapabilitiesDocument() {
       'getTokenPools token filtering is network-scoped only: the cross-network /pools/search silently ignores token_address, and an unknown token_address returns empty results, not an error',
       'getTokenPools no longer supports inversed/reorder or paired_token_address/address (no equivalent on /networks/{network}/pools/search); invert prices client-side and filter results[].tokens for pair queries',
       'getTokenMultiPrices is capped at 10 tokens per request',
+      'getNetworkPools, getDexPools, getTokenPools, getNetworkPoolsFilter, getTopTokens and filterNetworkTokens leave out pools and tokens created in the last hour unless the key is Dev, Pro or Enterprise on api-pro. A created_after window shorter than an hour, or getTokenPools on a token launched in the last hour, comes back empty without an error; that means the plan, not that nothing was created. getPoolDetails and getTokenDetails answer at any age. Details: https://docs.dexpaprika.com/knowledge-base/rate-limits#search-freshness',
       "getPoolTransactions needs a Dev, Pro or Enterprise key on api-pro (DEXPAPRIKA_API_BASE_URL=https://api-pro.dexpaprika.com) since 2026-09-30; keyless and free keys get 403, which retrying will not change",
       "getPoolTransactions from/to take a relative offset ('-1h'), Unix seconds, RFC3339 or YYYY-MM-DD; results always capped to last 7 days",
       "getPoolOHLCV without a key reaches back 24 hours at 1h and longer: start='-24h' stays inside it, an older start or a finer interval returns 403",
@@ -919,6 +946,31 @@ server.registerTool(
 TOOL_COUNT += 1;
 
 // Helper: register a read tool with rationale + outputSchema + read-only annotations.
+// Identifier arguments are checked against the characters real ids use before a handler runs,
+// so a value that is not an id never becomes part of a URL. safeUpstreamUrl checks the built
+// path again.
+function invalidIdentifier(args) {
+  if (!args || typeof args !== 'object') return null;
+  if (typeof args.network === 'string' && !NETWORK_ID.test(String(normalizeNetwork(args.network)))) {
+    return buildErrorResponse(
+      ErrorCodes.DP400_INVALID_NETWORK,
+      'network must be a network id such as ethereum, solana or bob_network.',
+      false,
+      'Call getNetworks for the list of network ids.',
+    );
+  }
+  const addresses = [args.pool_address, args.token_address, ...(Array.isArray(args.tokens) ? args.tokens : [])];
+  if (addresses.some((a) => typeof a === 'string' && !ADDRESS_ID.test(a))) {
+    return buildErrorResponse(
+      ErrorCodes.DP400_INVALID_ADDRESS,
+      'Pool and token addresses may contain only letters, digits, ":", "_" and "-".',
+      false,
+      'Pass the address exactly as getTokenPools, getNetworkPools or search return it.',
+    );
+  }
+  return null;
+}
+
 function registerReadTool(name, description, inputShape, handler) {
   server.registerTool(
     name,
@@ -928,7 +980,10 @@ function registerReadTool(name, description, inputShape, handler) {
       outputSchema: outputSchemaFor(name),
       annotations: ANNOTATIONS_READ_ONLY,
     },
-    handler,
+    (args, extra) => {
+      const invalid = invalidIdentifier(args);
+      return invalid ? errorText(invalid) : handler(args, extra);
+    },
   );
   TOOL_COUNT += 1;
 }
@@ -1089,7 +1144,7 @@ registerReadTool(
 // ─── getNetworkPoolsFilter ───────────────────────────────────────────────────
 registerReadTool(
   'getNetworkPoolsFilter',
-  'Get pools on one network filtered by numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Choose this over getNetworkPools when the user gives numeric constraints or a time window. Use for \'pools over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Optional filters (AND-combined): volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get pools on one network filtered by numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Choose this over getNetworkPools when the user gives numeric constraints or a time window. Use for \'pools over $1M liquidity on Base\', \'pools created in the last 24h\', or \'high-volume low-liquidity pairs\'. Without a Dev plan or higher (a Dev, Pro or Enterprise key on api-pro.dexpaprika.com), pools created in the last hour are left out, so a created_after window shorter than an hour comes back empty. Optional filters (AND-combined): volume_24h_min/max, volume_7d_min/max, liquidity_usd_min/max, txns_24h_min, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -1114,7 +1169,7 @@ registerReadTool(
     price_change_percentage_1h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 1h price change, in percent'),
     price_change_percentage_5m_min: z.coerce.number().optional().describe("OPTIONAL: Minimum 5m price change, in percent. The shortest window we carry, so it is the one to reach for on 'what is moving right now'."),
     price_change_percentage_5m_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 5m price change, in percent'),
-    created_after: z.coerce.string().optional().describe("OPTIONAL: Only pools created at or after this time: a relative offset such as '-24h' or '-7d', Unix seconds, RFC3339 or YYYY-MM-DD"),
+    created_after: z.coerce.string().optional().describe("OPTIONAL: Only pools created at or after this time: a relative offset such as '-24h' or '-7d', Unix seconds, RFC3339 or YYYY-MM-DD. Without a Dev plan or higher, pools created in the last hour are left out, so a window shorter than an hour comes back empty."),
     created_before: z.coerce.string().optional().describe("OPTIONAL: Only pools created at or before this time, same formats as created_after (e.g. '-1h')"),
     sort_by: z.enum(POOL_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical *_24h names; short legacy names are still accepted. The REST API calls this parameter order_by."),
     order_by: z.enum(POOL_SORT_FIELDS).optional().describe('OPTIONAL: alias of sort_by; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes order_by, so use this name when calling the REST API directly.'),
@@ -1255,7 +1310,7 @@ registerReadTool(
 // silently returning data that does not match the request.
 registerReadTool(
   'getTokenPools',
-  'Get the liquidity pools that contain a specific token on one network, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Use for \'which pools hold WETH on ethereum?\' or \'liquidity venues for 0x...\'. Network-scoped, so run search first if unsure of the network; unknown addresses return empty results, not an error. For the token\'s own price use getTokenDetails. Params: network (required); token_address (required); limit (default 10, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort). Extra params such as inversed or paired_token_address are unsupported and error.',
+  'Get the liquidity pools that contain a specific token on one network, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Use for \'which pools hold WETH on ethereum?\' or \'liquidity venues for 0x...\'. Network-scoped, so run search first if unsure of the network; unknown addresses return empty results, not an error. Without a Dev plan or higher (a Dev, Pro or Enterprise key on api-pro.dexpaprika.com), pools created in the last hour are left out, so a token launched in the last hour shows no pools yet. For the token\'s own price use getTokenDetails. Params: network (required); token_address (required); limit (default 10, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort). Extra params such as inversed or paired_token_address are unsupported and error.',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     token_address: z.string().describe('REQUIRED: Token contract address. Results are restricted to pools on the given network containing this token. Unknown addresses return empty results, not an error.'),
@@ -1394,7 +1449,7 @@ registerReadTool(
 // ─── filterNetworkTokens ─────────────────────────────────────────────────────
 registerReadTool(
   'filterNetworkTokens',
-  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, price_change_percentage_24h_min/max, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
+  'Get tokens on one network matching numeric thresholds, returned under \'results\' with has_next_page and next_cursor. Read-only. The first page works without an API key; paging with cursor needs a key (a free key pages without limit). Choose this over getTopTokens when the user gives numeric constraints or a time window. Use for \'tokens with FDV over $10M on Base\', \'newly created tokens today\', or \'low-liquidity high-volume tokens\'. Without a Dev plan or higher (a Dev, Pro or Enterprise key on api-pro.dexpaprika.com), tokens created in the last hour are left out, so a created_after window shorter than an hour comes back empty. Optional filters (AND-combined): volume_24h_min/max, liquidity_usd_min/max, fdv_min/max, txns_24h_min, price_change_percentage_24h_min/max, created_after/created_before (a relative offset such as \'-24h\', Unix seconds, RFC3339 or YYYY-MM-DD). Also network (required); limit (default 50, max 100); cursor to page; sort_by (default \'volume_usd_24h\', alias order_by); sort_dir asc/desc (default \'desc\', alias sort).',
   {
     network: z.string().describe("REQUIRED: Network ID from getNetworks (e.g., 'ethereum', 'solana')"),
     limit: z.coerce.number().optional().default(50).describe('OPTIONAL: Number of items per page (default: 50, max: 100)'),
@@ -1408,7 +1463,7 @@ registerReadTool(
     txns_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum number of transactions in 24h'),
     price_change_percentage_24h_min: z.coerce.number().optional().describe('OPTIONAL: Minimum 24h price change, in percent. Negatives are allowed, so -20 finds tokens down at least 20%. This is the only price-change window tokens carry; for 6h, 1h or 5m use getNetworkPoolsFilter.'),
     price_change_percentage_24h_max: z.coerce.number().optional().describe('OPTIONAL: Maximum 24h price change, in percent'),
-    created_after: z.coerce.string().optional().describe("OPTIONAL: Only tokens created at or after this time: a relative offset such as '-24h' or '-7d', Unix seconds, RFC3339 or YYYY-MM-DD"),
+    created_after: z.coerce.string().optional().describe("OPTIONAL: Only tokens created at or after this time: a relative offset such as '-24h' or '-7d', Unix seconds, RFC3339 or YYYY-MM-DD. Without a Dev plan or higher, tokens created in the last hour are left out, so a window shorter than an hour comes back empty."),
     created_before: z.coerce.string().optional().describe("OPTIONAL: Only tokens created at or before this time, same formats as created_after (e.g. '-1h')"),
     sort_by: z.enum(TOKEN_SORT_FIELDS).optional().describe("OPTIONAL (preferred): Field to sort by (default: 'volume_usd_24h'). Prefer the canonical names; short legacy names are still accepted. The REST API calls this parameter order_by."),
     order_by: z.enum(TOKEN_SORT_FIELDS).optional().describe('OPTIONAL: alias of sort_by; both are accepted. Not deprecated at the REST layer: api.dexpaprika.com itself takes order_by, so use this name when calling the REST API directly.'),

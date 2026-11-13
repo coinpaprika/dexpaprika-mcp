@@ -2,6 +2,25 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.9.3] - 2026-11-05
+
+### Changed
+- **Search on keyless and free keys is an hour behind on new pools and tokens, and the tools say so.** From 2026-11-05 the API leaves pools and tokens created in the last hour out of `/networks/{network}/pools/search` and `/networks/{network}/tokens/search` for keyless and free callers, and getNetworkPools, getDexPools, getTokenPools, getNetworkPoolsFilter, getTopTokens and filterNetworkTokens all read from them; Dev, Pro and Enterprise keys on `api-pro.dexpaprika.com` see them as they're indexed. There is no error, so a `created_after` window shorter than an hour comes back empty. The `getNetworkPoolsFilter`, `filterNetworkTokens` and `getTokenPools` descriptions, the `created_after` parameters, the `getCapabilities` common pitfalls and the README now say this, so an agent reads an empty result as the plan and not as a quiet market. No code path changed.
+
+## [2.9.2] - 2026-10-21
+
+### Security
+- **Identifiers are checked against the characters real ids use.** 2.9.1 refused a list of bad characters, so a segment such as `..;` or a Unicode look-alike of `.` or `/` still reached the API, and whether it then meant `..` depended on how each server in front of the API parsed it. Now `network` must match `[a-z0-9_-]` and `pool_address`, `token_address` and each of `tokens` must match `[A-Za-z0-9:_-]` (EVM and Sui hex, Solana and Tron base58, TON addresses, Sui and Aptos type tags such as `0x2::sui::SUI`). Anything else returns `DP400_INVALID_NETWORK` or `DP400_INVALID_ADDRESS` before a request is made. The path shapes use the same alphabets and the parsed-path check stays.
+- **Redirects from the API are no longer followed blindly.** fetch followed them by default, repeating the request with your key to wherever the redirect pointed, without the path check seeing the new URL. A redirect is now followed only to the same host and base path, only if the new path passes the same check, and at most three times; anything else returns `DP502_REDIRECT_REFUSED`.
+
+## [2.9.1] - 2026-10-21
+
+### Security
+- **Tool arguments can no longer change which API path a request goes to.** Arguments such as `network`, `pool_address` and `token_address` were placed into the request path as given, so a value containing `../` could send the request, with your configured key, to a path outside `/networks`. Every upstream URL now passes one check before it is fetched: it must have one of the known path shapes, no segment may be a dot segment or contain `\`, `%`, `#`, `?`, whitespace or control characters, and the path must be unchanged after URL parsing. Anything else is refused before a request is made. `src/test_path_safety.js` runs the server over stdio against a local recorder and fails if any request leaves the known shapes.
+
+### Fixed
+- **`getKeyStatus` works behind the new check.** Its `/usage` call is on the allowed list, so a working key is no longer reported as rejected.
+
 ## [2.9.0] - 2026-10-16
 
 ### Changed

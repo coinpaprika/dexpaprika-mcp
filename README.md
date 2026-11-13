@@ -1,6 +1,4 @@
-# DexPaprika MCP Server
-
-[![smithery badge](https://smithery.ai/badge/coinpaprika/dexpaprika)](https://smithery.ai/servers/coinpaprika/dexpaprika)
+# DexPaprika MCP Server: Real-Time DEX and Crypto Data for AI Agents
 
 A Model Context Protocol (MCP) server that provides on-demand access to DexPaprika's cryptocurrency and DEX data API. Built specifically for AI assistants like Claude to programmatically fetch current token, pool and DEX data with zero configuration.
 
@@ -289,6 +287,7 @@ const prices = await getTokenMultiPrices({
 - **Free tier**: keyless, no signup, at 15 requests per minute. A free API key raises that to 30 requests per minute, raises the monthly quota, and unlocks streaming: register at https://console.dexpaprika.com. Pro is $99/month at 500 requests per minute, and there is a $30 Dev plan at 120. One request costs one credit; batch endpoints cost one credit per item. Full docs at https://docs.dexpaprika.com. Monthly quotas change, so read them here rather than from this page: https://dexpaprika.com/api/pricing
 - **Paging search results needs a key**: on `getNetworkPools`, `getDexPools`, `getNetworkPoolsFilter`, `getTokenPools`, `filterNetworkTokens` and `getTopTokens`, the first page works keyless, but passing `cursor` to fetch a later page requires an API key. A free key pages without limit.
 - **Data delay**: up to 60 seconds on the free tier, real-time on the paid plans
+- **New pools and tokens in search**: without a Dev plan or higher, `getNetworkPools`, `getDexPools`, `getTokenPools`, `getNetworkPoolsFilter`, `getTopTokens` and `filterNetworkTokens` leave out pools and tokens created in the last hour, so a `created_after` window shorter than an hour, or the pools of a token launched in the last hour, come back empty. `getPoolDetails` and `getTokenDetails` answer at any age. Dev, Pro and Enterprise keys on `api-pro.dexpaprika.com` see them as they're indexed. Details: https://docs.dexpaprika.com/knowledge-base/rate-limits#search-freshness
 - **Response Time**: 100-500ms for most endpoints (network dependent)
 - **Error Handling**: Structured errors with codes, suggestions, and retry guidance
 - **OHLCV Data Availability**: Historical data typically available from token/pool creation date
