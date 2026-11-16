@@ -130,8 +130,10 @@ const TOKEN_FILTER_PARAM = {
   volume_24h_max: 'volume_usd_24h_max',
   liquidity_usd_min: 'liquidity_usd_min',
   liquidity_usd_max: 'liquidity_usd_max',
-  fdv_min: 'fdv_min',
-  fdv_max: 'fdv_max',
+  // The tool arguments are fdv_min/fdv_max; the API names are fdv_usd_min and
+  // fdv_usd_max. The short names were ignored, and answer 400 from 23 Nov 2026.
+  fdv_min: 'fdv_usd_min',
+  fdv_max: 'fdv_usd_max',
   txns_24h_min: 'txns_24h_min',
   // The 24h window is the only price-change bound tokens/search honours. The
   // shorter ones are absent from token rows and are ignored if sent, so they
@@ -179,7 +181,6 @@ export function buildTokenSearchParams(args) {
   };
   if (args.limit !== undefined && args.limit !== null) params.limit = args.limit;
   if (typeof args.cursor === 'string' && args.cursor !== '') params.cursor = args.cursor;
-  if (typeof args.query === 'string' && args.query !== '') params.query = args.query;
   for (const [legacy, canonical] of Object.entries(TOKEN_FILTER_PARAM)) {
     const v = args[legacy];
     if (v !== undefined && v !== null) params[canonical] = v;
