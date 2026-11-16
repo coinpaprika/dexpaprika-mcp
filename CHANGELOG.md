@@ -2,6 +2,11 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.9.4] - 2026-11-16
+
+### Fixed
+- **filterNetworkTokens applies its FDV bounds.** The tool sent `fdv_min` and `fdv_max` to `/networks/{network}/tokens/search` under those names. The API calls them `fdv_usd_min` and `fdv_usd_max`, so the bounds were ignored and the results were not filtered by FDV. The tool arguments keep their names; only the wire names change. From 23 November 2026 the API answers `400` to a query parameter an endpoint does not accept, so before this fix any call that set an FDV bound would have failed from that date. A `query` argument, which no tool exposes and token search does not accept, is no longer forwarded either. A new test sends every argument the search tools pass through and checks each key against the routes' accepted lists.
+
 ## [2.9.3] - 2026-11-05
 
 ### Changed
