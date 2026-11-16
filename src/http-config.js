@@ -119,9 +119,12 @@ export const DEFAULT_BASE_URL = 'https://api.dexpaprika.com';
  * Sending a free key to an api-pro host returns 403 rather than 401, which is
  * why guessing the host from the key would be worse than making it explicit.
  *
- * An unusable value falls back to the default rather than throwing: a data tool
- * that refuses to start over a typo in an optional variable is a worse outcome
- * than one that keeps working against the public API.
+ * The API key travels with every request to this origin, so only DexPaprika's
+ * own hosts (over https) and the local machine (for tests and local proxies)
+ * are accepted. Anything else, like an unusable value, falls back to the
+ * default rather than throwing: a data tool that refuses to start over a typo
+ * in an optional variable is a worse outcome than one that keeps working
+ * against the public API.
  *
  * @returns {string} origin with no trailing slash
  */
@@ -135,9 +138,19 @@ export function resolveBaseUrl(env = process.env) {
   } catch {
     return DEFAULT_BASE_URL;
   }
-  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return DEFAULT_BASE_URL;
+  if (!isAllowedOrigin(parsed)) return DEFAULT_BASE_URL;
 
   return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
+}
+
+/** DexPaprika REST hosts that may receive the API key. */
+export const ALLOWED_API_HOSTS = new Set(['api.dexpaprika.com', 'api-pro.dexpaprika.com']);
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+function isAllowedOrigin(url) {
+  if (url.username || url.password) return false;
+  if (url.protocol === 'https:' && ALLOWED_API_HOSTS.has(url.hostname)) return true;
+  return (url.protocol === 'http:' || url.protocol === 'https:') && LOOPBACK_HOSTS.has(url.hostname);
 }
 
 /** Origin for Dev, Pro and Enterprise keys. */

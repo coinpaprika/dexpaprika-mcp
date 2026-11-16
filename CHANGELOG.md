@@ -2,6 +2,16 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.9.5] - 2026-11-16
+
+### Security
+- **The API key only goes to DexPaprika.** `DEXPAPRIKA_API_BASE_URL` accepted any http or https origin, and every request to it carried `DEXPAPRIKA_API_KEY`, so a config with a wrong or planted base URL sent the key to that host, in plain text over http. Only `https://api.dexpaprika.com`, `https://api-pro.dexpaprika.com` and the local machine (`127.0.0.1`, `localhost`, `[::1]`, for tests and local proxies) are accepted now. Any other value falls back to `https://api.dexpaprika.com`, as an unusable value already did.
+- **The Docker image installs from the lockfile and does not run as root.** It uses `npm ci --omit=dev`, copies only `src/` (a local `.env` could end up in the image before), runs as the `node` user, and is pinned to `node:22-alpine`. A `.dockerignore` keeps the git tree, tests and env files out of the build context.
+
+### Changed
+- **The npm package ships only the server.** It used to include the tests, the CI workflows, `openapi.yml` and the test scripts copied into `dist/`. It now holds `dist/` with the server modules, plus `package.json`, the README, the changelog and the license.
+- **`node-fetch` is no longer a dependency.** Only a manual test script imported it, and Node 18 and later have `fetch` built in.
+
 ## [2.9.4] - 2026-11-16
 
 ### Fixed

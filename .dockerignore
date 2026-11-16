@@ -1,0 +1,10 @@
+.git
+.github
+.claude
+node_modules
+dist
+test
+.env
+.env.*
+*.log
+*.tgz
