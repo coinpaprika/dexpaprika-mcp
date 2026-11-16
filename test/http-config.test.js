@@ -144,6 +144,24 @@ test('an unusable value falls back rather than breaking the tool', () => {
   }
 });
 
+test('the key only goes to DexPaprika hosts over https or to this machine', () => {
+  for (const value of [
+    'https://evil.example',
+    'http://evil.example',
+    'http://api-pro.dexpaprika.com',
+    'http://api.dexpaprika.com',
+    'https://api-pro.dexpaprika.com.evil.example',
+    'https://evil.example/api-pro.dexpaprika.com',
+    'https://user:pass@api-pro.dexpaprika.com',
+    'https://dexpaprika.com',
+  ]) {
+    assert.equal(resolveBaseUrl({ DEXPAPRIKA_API_BASE_URL: value }), DEFAULT_BASE_URL,
+      `expected ${value} to fall back`);
+  }
+  assert.equal(resolveBaseUrl({ DEXPAPRIKA_API_BASE_URL: 'https://api.dexpaprika.com' }), 'https://api.dexpaprika.com');
+  assert.equal(resolveBaseUrl({ DEXPAPRIKA_API_BASE_URL: 'http://localhost:9000' }), 'http://localhost:9000');
+});
+
 test('a local origin is accepted, which is what the wire tests run against', () => {
   assert.equal(resolveBaseUrl({ DEXPAPRIKA_API_BASE_URL: 'http://127.0.0.1:8080' }), 'http://127.0.0.1:8080');
 });

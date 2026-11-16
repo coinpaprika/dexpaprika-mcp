@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import fetch from 'node-fetch';
 
 // Base URL for DexPaprika API
 const API_BASE_URL = 'https://api.dexpaprika.com';
