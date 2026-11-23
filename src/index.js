@@ -1413,7 +1413,7 @@ registerReadTool(
 // ─── getTokenMultiPrices (hand-built response, not jsonText) ──────────────────
 registerReadTool(
   'getTokenMultiPrices',
-  'Get current USD prices for up to 10 tokens on the same network in one batched call, returned as a prices array plus a missing_tokens list. Read-only and keyless. Tokens that cannot be priced come back in missing_tokens rather than being dropped, so check that list for partial failures. Use for \'prices for these tokens\', \'compare the price of X, Y and Z\', or building a portfolio/dashboard snapshot. For one token with full metadata and multi-timeframe stats use getTokenDetails. Params: network (required slug, all tokens must share it); tokens (required array of 1 to 10 contract addresses).',
+  'Get current USD prices for up to 10 tokens on the same network in one batched call, returned as a prices array plus a missing_tokens list. Read-only. Needs an API key (a free key is enough): without one the API answers 403 plan_required. Tokens that cannot be priced come back in missing_tokens rather than being dropped, so check that list for partial failures. Use for \'prices for these tokens\', \'compare the price of X, Y and Z\', or building a portfolio/dashboard snapshot. For one token with full metadata and multi-timeframe stats use getTokenDetails. Params: network (required slug, all tokens must share it); tokens (required array of 1 to 10 contract addresses).',
   {
     network: z.string().describe('REQUIRED: Network ID from getNetworks'),
     tokens: z.array(z.string()).min(1).max(10).describe('REQUIRED: Up to 10 token contract addresses on the same network.'),
