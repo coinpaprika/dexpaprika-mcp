@@ -2,6 +2,12 @@
 
 All notable changes to the DexPaprika MCP Server will be documented in this file.
 
+## [2.9.6] - 2026-11-23
+
+### Changed
+- **`getTokenMultiPrices` says it needs an API key.** Since 18 November 2026 `GET /networks/{network}/multi/prices` answers `403 plan_required` to a call without a key, and a free key is enough. The tool description no longer calls the tool keyless, and the README row and example name `DEXPAPRIKA_API_KEY`. No code path changed.
+- **`server.json` carries the DexPaprika icons** and its version follows the hosted server (2.12.3), so directories that read the official MCP Registry show an icon.
+
 ## [2.9.5] - 2026-11-16
 
 ### Security
