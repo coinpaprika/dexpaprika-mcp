@@ -183,7 +183,7 @@ This self-host build registers 20 read tools: 19 market-data tools plus `getKeyS
 | `getTokenPools` | Liquidity pools containing a token (network-scoped filter, `results` + cursor pagination; paging past the first page needs a key) | `network`, `token_address` |
 | `getTokenOHLCV` | Historical USD OHLCV candles for a token, volume-weighted across every pool it trades in. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 | `network`, `token_address`, `start` |
 | `getTokenIndicator` | The same indicators on a token's USD candles across every pool it trades in. Requires a Dev or Pro plan on `api-pro.dexpaprika.com`; keyless and free keys get 403 | `network`, `token_address`, `indicator` |
-| `getTokenMultiPrices` | Batched prices for up to 10 tokens | `network`, `tokens[]` |
+| `getTokenMultiPrices` | Batched prices for up to 10 tokens. Needs an API key (a free key works); set `DEXPAPRIKA_API_KEY`, keyless calls get 403 `plan_required` | `network`, `tokens[]` |
 | `getTopTokens` | Top tokens on a network ranked by volume, liquidity, FDV, or 24h price change | `network` |
 | `filterNetworkTokens` | Filter tokens by volume, liquidity, FDV, transactions, and creation time | `network` |
 
@@ -260,7 +260,8 @@ const rsi = await getPoolIndicator({
   start: "-24h"
 });
 
-// Batch prices for multiple tokens (max 10):
+// Batch prices for multiple tokens (max 10). Needs an API key (a free key
+// works) in DEXPAPRIKA_API_KEY; without one the API answers 403 plan_required.
 const prices = await getTokenMultiPrices({
   network: "ethereum",
   tokens: [
